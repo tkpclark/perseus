@@ -1,0 +1,6 @@
+cd $5
+ftp -n $1 << END
+user $2 $3
+cd upload
+put $4
+bye

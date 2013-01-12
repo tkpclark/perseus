@@ -1,0 +1,9 @@
+
+cd ../tmp/
+ftp -n $1 << END
+user $2 $3
+cd download
+cd $4
+binary
+get $5
+bye
