@@ -1,3 +1,4 @@
+
 #include "com.h"
 extern const int des_len;
 extern const char *key;
