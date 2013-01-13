@@ -17,7 +17,7 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *version="1.34";
+static const char *version="1.33L";
 
 
 	
