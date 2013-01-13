@@ -4,8 +4,6 @@
 1.32 write version number by -v arugments
 1.33 printf when proclog 2012-11-29
 1.34 log don't encrypt, add pull_imei function
-1.35 modify pull_mei(./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa)
-1.36 ignore signal SIGCHLD,avoid zombie
 */
 
 //static const char *app_config="../config/app.config";
@@ -19,7 +17,7 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *version="1.36";
+static const char *version="1.34";
 
 
 	
@@ -287,6 +285,7 @@ static get_config_apks_encrypt()
 
 	}
 
+	prog_argu[debug].apk_num=0;
 	//get apks of this model
 	while(1)
 	{
@@ -502,8 +501,8 @@ static install_one_apk(char *apk)
 	char pkg[128];
 	get_pkg_name_by_apk(apk,pkg);
 install:
-	if(++try_count >=3)
-		goto install_end;
+	if(++try_count >=2)
+		exit(0);
 	//check whether the package exist
 	
 	sprintf(cmd,"%s -s %s shell pm path %s",adb,device_info.id,pkg);
@@ -521,7 +520,7 @@ install:
 		system(cmd);
 		
 	}
-	
+	pclose(fp);
 	
 
 	//install
@@ -717,7 +716,6 @@ get_imei:
 	pclose(fp);
 
 }
-/*
 static pull_imei()
 {
 	FILE *fp;
@@ -732,7 +730,7 @@ static pull_imei()
 	system(cmd);
 
 	//pull
-	sprintf(cmd,"%s -s %s pull /sdcard/.imei %s 2>&1",adb,device_info.id,tmpimei);
+	sprintf(cmd,"%s -s %s pull /data/local/tmp/.imei %s 2>&1",adb,device_info.id,tmpimei);
 	proclog("%s\n",cmd);
 		
 	if((fp = popen(cmd,"r")) == NULL)
@@ -777,39 +775,6 @@ static pull_imei()
 	}
 	strcpy(device_info.imei,imei);
 	close(fd);
-
-	
-}
-*/
-//./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa
-static pull_imei()
-{
-	FILE *fp;
-	char buffer[200] = {0};
-	char cmd[512];
-
-	//pull
-	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
-	proclog("%s\n",cmd);
-		
-	if((fp = popen(cmd,"r")) == NULL)
-	{
-		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to execute:%s\n",cmd);
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-
-
-	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
-	{
-		proclog("read imei failed!\n");
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-	
-	strcpy(device_info.imei,trim(buffer));
-	proclog("get imei:%s\n",device_info.imei);
 
 	
 }
@@ -938,11 +903,6 @@ main(int argc,char **argv)
 	   exit(0);
 	}
 
-	struct sigaction signew;
-	//ignore signal SIGCHLD,avoid zombie
-	signew.sa_handler=SIG_IGN;
-	sigaction(SIGCHLD,&signew,0);
-
 	
 	debug=1;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -964,8 +924,9 @@ main(int argc,char **argv)
 	strcpy(device_info.id,argv[1]);
 
 
+loop:
 	
-	
+	printf("looping....\n");
 	debug=0;
 	get_device_info();
 	install_monitor();
@@ -991,5 +952,7 @@ main(int argc,char **argv)
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
 	proclog("installation finished!\n");
+
+	goto loop;
 	
 }
