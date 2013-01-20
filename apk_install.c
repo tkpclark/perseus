@@ -6,6 +6,7 @@
 1.34 log don't encrypt, add pull_imei function
 1.35 modify pull_mei(./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa)
 1.36 ignore signal SIGCHLD,avoid zombie
+1.37 add popen time out
 */
 
 //static const char *app_config="../config/app.config";
@@ -19,7 +20,7 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *version="1.36";
+static const char *version="1.37";
 
 
 	
@@ -164,6 +165,30 @@ static void proclog(const char *fmt,...)
 	
 }
 
+static void acalarm(int signo)
+{
+	proclog("sigalarm,time out!\n");
+	//system("nohup ./chk.sh &");
+}
+
+static FILE * popen_time(char *buf,char * mod)
+{
+	FILE *fp;
+	alarm(30);
+//	proclog("set alarming ....\n");
+	fp=popen(buf,mod);
+	alarm(0);
+	return fp;
+}
+static char *fgets_time(char *s, int n, FILE *stream)
+{
+	char *p=NULL;
+	alarm(30);
+	p=fgets(s, n, stream);
+	alarm(0);
+	return p;
+	
+}
 static void record(char *apkname,char *result)
 {
 	char ts[32];
@@ -225,13 +250,13 @@ static get_config_apks()
 	//read config
 	char buffer[256];
 	
-	fgets(buffer,sizeof(buffer),fp);
+	fgets_time(buffer,sizeof(buffer),fp);
 	device_info.apk_num=atoi(trim(buffer));
 
 	int i;
 	for(i=0;i<device_info.apk_num;i++)
 	{
-		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:config:%s num error\n",device_info.config_name);
 			proclog("ERR:config:%s num error\n",device_info.config_name);
@@ -376,13 +401,13 @@ static push_config()
 	char cmd[512];
 	sprintf(cmd,"%s -s %s push %s %sinception.config 2>&1",adb,device_info.id,config_name,device_config_dir);
 	proclog("%s\n",cmd);
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
-	if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+	if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 	{
 		//printscreen("ERR:read failed in push_config\n");
 		proclog("ERR:read failed in push_config\n");
@@ -413,7 +438,7 @@ static int uninstall_apk(const char *pkg_name)
 	proclog("%s\n",cmd);
 
 uninstall:
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -423,7 +448,7 @@ uninstall:
 	int i=0;
 	for(i=0;i<1;i++)
 	{
-		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in uninstall_monitor\n");
 			exit(0);
@@ -489,9 +514,8 @@ static install_one_apk(char *apk)
 	char cmd[512];
 	int try_count=0;
 	
-
 	//printscreen("%s start installing...\n",apk);
-	alarm(60);
+	
 
 	if(!apk_exist(apk))
 	{
@@ -501,6 +525,7 @@ static install_one_apk(char *apk)
 	}
 	char pkg[128];
 	get_pkg_name_by_apk(apk,pkg);
+
 install:
 	if(++try_count >=3)
 		goto install_end;
@@ -508,17 +533,17 @@ install:
 	
 	sprintf(cmd,"%s -s %s shell pm path %s",adb,device_info.id,pkg);
 	proclog("%s\n",cmd);
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		goto install;
 	}
-	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
+	if(fgets_time(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
 	{
 		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
 		proclog("%s\n",cmd);
-		system(cmd);
+		system(cmd); 
 		
 	}
 	
@@ -528,7 +553,7 @@ install:
 	sprintf(cmd,"%s -s %s install -r %s",adb,device_info.id,apk);
 	proclog("%s\n",cmd);
 	
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -539,7 +564,7 @@ install:
 	for(i=0;i<2;i++)
 	{
 		//
-		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in install_one_apk\n");
 			pclose(fp);
@@ -579,6 +604,13 @@ install:
 
 install_end:
 	strcpy(result,trim(buffer));
+	//if time out, set right hint of result
+	if(!strstr(result,"Success") && !(strstr(result,"Failure")) )
+	{
+		strcpy(result,"Failure timeout");
+	}
+
+	
 	if(!strstr(apk,monitor_apk))
 		record(apk,result);
 	return;
@@ -601,7 +633,7 @@ static start_monitor(const char *activity)
 start_moni:
 	if(++try_count> 3)
 		return;
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -611,7 +643,7 @@ start_moni:
 	int i=0;
 	for(i=0;i<1;i++)
 	{
-		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in start_monitor\n");
 			sleep(1);
@@ -653,13 +685,13 @@ static get_serialno()
 	char serialno[64];
 	char cmd[512];
 	sprintf(cmd,"%s -s %s get-serialno",adb,device_info.id);
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
-	fgets(buffer,sizeof(buffer)-1,fp);
+	fgets_time(buffer,sizeof(buffer)-1,fp);
 	strcpy(serialno,buffer);
 	trim(serialno);
 	strcpy(device_info.serialno,serialno);
@@ -682,7 +714,7 @@ get_imei:
 		return;
 	proclog("%s[%d]\n",cmd,try_count);
 
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -693,7 +725,7 @@ get_imei:
 	int i;
 	for(i=0;i<3;i++)
 	{
-		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed get_imei(),failed to get imei\n");
 			proclog("ERR:read failed get_imei(),failed to get imei\n");
@@ -735,7 +767,7 @@ static pull_imei()
 	sprintf(cmd,"%s -s %s pull /sdcard/.imei %s 2>&1",adb,device_info.id,tmpimei);
 	proclog("%s\n",cmd);
 		
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -744,7 +776,7 @@ static pull_imei()
 	}
 
 
-	fgets(buffer, sizeof(buffer)-1, fp) ;
+	fgets_time(buffer, sizeof(buffer)-1, fp) ;
 		
 	if(strstr(buffer,"does not exist"))
 	{
@@ -792,7 +824,7 @@ static pull_imei()
 	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
 	proclog("%s\n",cmd);
 		
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -801,7 +833,7 @@ static pull_imei()
 	}
 
 
-	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
+	if(fgets_time(buffer, sizeof(buffer)-1, fp) ==NULL)
 	{
 		proclog("read imei failed!\n");
 		uninstall_apk(monitor_apk_pkg);
@@ -858,14 +890,14 @@ static get_prop(char *name,char *value)
 	char cmd[512];
 	sprintf(cmd,"%s -s %s shell getprop",adb,device_info.id);
 	proclog("%s\n",cmd);
-	if((fp = popen(cmd,"r")) == NULL)
+	if((fp = popen_time(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
 
-	while(fgets(buffer,sizeof(buffer)-1,fp))
+	while(fgets_time(buffer,sizeof(buffer)-1,fp))
 	{
 		memset(_name,0,sizeof(_name));
 		memset(_value,0,sizeof(_value));
@@ -919,7 +951,9 @@ static start_service()
 	sprintf(cmd,"%s -s %s shell am startservice com.shellapp.ui/.ShellService",adb,device_info.id);
 	proclog("%s\n",cmd);
 	//adb shell am startservice com.shellapp.ui/.ShellService
+	alarm(30);
 	system(cmd);
+	alarm(0);
 }
 main(int argc,char **argv)
 {
@@ -939,10 +973,16 @@ main(int argc,char **argv)
 	}
 
 	struct sigaction signew;
+	
+
+	signew.sa_handler=acalarm;
+	sigemptyset(&signew.sa_mask);
+	signew.sa_flags=0;
+	sigaction(SIGALRM,&signew,0);
+	
 	//ignore signal SIGCHLD,avoid zombie
 	signew.sa_handler=SIG_IGN;
 	sigaction(SIGCHLD,&signew,0);
-
 	
 	debug=1;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
