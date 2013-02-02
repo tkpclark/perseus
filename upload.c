@@ -7,7 +7,8 @@
 1.21 print log to the same logfile (.log) with other models
 	log don't encrypt
 1.22 ignore signal SIGCHLD,avoid zombie
-1.23 pack logs in "logbak" dir by day,and upload it 2013-01-31 midnight
+1.23 temp version,see git log
+1.24 never delete logs
 *********************/
 
 typedef struct
@@ -35,9 +36,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.23";
-
-static const int save_log_days=40;
+static const char *version="1.22";
 
 void proclog(const char *fmt,...)
 {
@@ -180,7 +179,7 @@ static delete_old_logs()
 	time_t tt;
 	char cmd[256];
 
-       tt=time(0)-3600*24*save_log_days;
+       tt=time(0)-3600*24*10;
        strftime(delete_filename,30,"%Y%m%d",(const struct tm *)localtime(&tt));
 
 	sprintf(cmd,"rm -f %s/%s*",prog_argu[debug].logbak_dir,delete_filename);
@@ -314,7 +313,8 @@ static short list()
 	}
 	*/
 
-	
+	//delete old logs
+	//delete_old_logs();
 
 	
 
@@ -390,107 +390,6 @@ static void acalarm(int signo)
 {
 	proclog("sigalarm,time out!\n");
 }
-static void pack_logbak_dir()
-{
-	int i;
-	time_t tt;
-	char cmd[256];
-	char tarday[32];
-	char box_id[32];
-	char path[128];
-	memset(box_id,0,sizeof(box_id));
-	get_box_id(box_id);
-
-	getcwd(path,sizeof(path));
-	chdir(prog_argu[debug].logbak_dir);
-	char buffer[128];
-	FILE *fp;
-	for(i=1;i<save_log_days;i++)
-	{
-       	tt=time(0)-i*24*3600;
-		strftime(tarday,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-		
-		sprintf(cmd,"ls %s*_* 2>&1",tarday);
-		proclog("%s\n",cmd);
-
-		//check whether these files exists
-		if((fp = popen(cmd,"r")) == NULL)
-		{
-			//printscreen("ERR:Fail to execute:%s\n",cmd);
-			proclog("ERR:Fail to execute:%s\n",cmd);
-		}
-
-		
-		if(fgets(buffer, sizeof(buffer)-1, fp)==NULL)
-		{
-			//proclog("gets nothing...\n");
-			continue;
-		}
-		//printf("++++++buffer:[%s]\n",buffer);
-		if(strstr(buffer,"No such file"))
-		{
-			//proclog("no files this tarday!\n");
-			pclose(fp);
-			continue;
-		}
-	
-	
-		sprintf(cmd,"tar zcvf %s-%s.tar.gz %s*_* --remove-files",tarday,box_id,tarday);
-		proclog("%s\n",cmd);
-		system(cmd);
-
-/*
-		sprintf(cmd,"rm %s*.sys");
-		proclog("%s\n",cmd);
-		system(cmd);
-		
-		sprintf(cmd,"rm %s*.record");
-		proclog("%s\n",cmd);
-		system(cmd);
-
-*/
-		
-	}
-	chdir(path);
-}
-static int upload_logbak_dir()
-{
-	
-	char cmd[256];
-	DIR * dp;
-	char upload_file[128];
-	struct dirent *name;
-	char path[256];
-	
-	//printf("debug:%d\n",debug);
-	dp = opendir(prog_argu[debug].logbak_dir);
-
-	if(!dp)
-	{
-		return -1;
-	}
-	char filename[128];
-
-	while(name = readdir(dp))
-	{
-		if(strlen(name->d_name)<3)
-			continue;
-		//printf("%s\n",name->d_name);
-		sprintf(upload_file,"%s/%s",prog_argu[debug].logbak_dir,name->d_name);
-		
-		if(!ftp_upload(name->d_name))
-		{
-			sprintf(cmd,"mv %s %s",upload_file,"../logbak2");
-			proclog("%s\n",cmd);
-			system(cmd);
-			
-		}
-		
-		
-	}
-	closedir(dp);
-
-}
 main(int argc,char **argv)
 {
 
@@ -544,18 +443,7 @@ main(int argc,char **argv)
 		list();
 		debug=0;
 		list();
-		// pack files in "logbak" dir by day
-
-		pack_logbak_dir();
-
-		//upload
-		upload_logbak_dir();
-
-		//delete old logs
-		delete_old_logs();
 		sleep(10);
-
-		
 	}
 }
 
