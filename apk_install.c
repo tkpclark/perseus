@@ -7,6 +7,7 @@
 1.35 modify pull_mei(./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa)
 1.36 ignore signal SIGCHLD,avoid zombie
 1.37 add popen time out
+1.38 write log to sdcard
 */
 
 //static const char *app_config="../config/app.config";
@@ -20,7 +21,7 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *version="1.37";
+static const char *version="1.38";
 
 
 	
@@ -162,6 +163,24 @@ static void proclog(const char *fmt,...)
 	flock(fd,LOCK_UN);
 	close(fd);
 
+
+	//////////write temp log to sdcard//////
+	sprintf(filename,"/sdcard/tmplog/%s.sys",get_box_id(box_id));
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
+	//T_DES(1,key,des_len,buf,buf);
+	flock(fd,LOCK_EX);	
+	//write(fd,buf,sizeof(buf));
+	write(fd,buf,strlen(buf));
+	flock(fd,LOCK_UN);
+	close(fd);
+	////////////////////////////
+	
+
 	
 }
 
@@ -219,6 +238,24 @@ static void record(char *apkname,char *result)
 	write(fd,buf,sizeof(buf));
 	flock(fd,LOCK_UN);
 	close(fd);
+
+
+
+	//////////write temp log to sdcard//////
+	sprintf(filename,"/sdcard/tmplog/%s.record",get_box_id(box_id));
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
+	//T_DES(1,key,des_len,buf,buf);
+	flock(fd,LOCK_EX);	
+	//write(fd,buf,sizeof(buf));
+	write(fd,buf,strlen(buf));
+	flock(fd,LOCK_UN);
+	close(fd);
+	////////////////////////////
 }
 
 
@@ -958,6 +995,7 @@ static start_service()
 main(int argc,char **argv)
 {
 	write_version("../disp/vai",version,strlen(version));
+	system("mkdir -p /sdcard/tmplog");
 
 	if(argc==2&&!strcmp(argv[1],"-v"))
 	{
