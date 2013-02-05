@@ -7,8 +7,8 @@
 1.21 print log to the same logfile (.log) with other models
 	log don't encrypt
 1.22 ignore signal SIGCHLD,avoid zombie
-1.23 temp version,see git log
-1.24 never delete logs
+1.23 pack logs in "logbak" dir by day,and upload it 2013-01-31 midnight
+1.27 never delete log , pack logs in logbak and upload,then move to logbak2 2013-02-03
 *********************/
 
 typedef struct
@@ -36,7 +36,9 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.22";
+static const char *version="1.27";
+
+static const int save_log_days=40;
 
 void proclog(const char *fmt,...)
 {
@@ -127,6 +129,56 @@ static int ftp_upload(const char *filename)
 	}
 
 }
+
+
+static int ftp_upload_logbak(const char *filename)
+{
+	//download
+//	printf("downloading %s from server\n",filename);
+	if(!is_online(prog_argu[debug].server_info.ip,21))
+	{
+		prt_screen(3, 0, 1,"网络中断,上传失败!\n");
+		return -1;
+	}
+	prt_screen(3, 0,1, "正在上传日志...\n");
+	FILE *fp;
+	char cmd[256];
+	sprintf(cmd,"./ftp_upload %s %s %s %s %s 2>&1",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password,filename,prog_argu[debug].logbak_dir);
+	proclog("%s\n",cmd);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		pclose(fp);
+		return -1;
+	}
+	char buffer[128];
+//	alarm(60);
+	if(fgets(buffer, sizeof(buffer)-1, fp)!=NULL)
+	{
+	//	alarm(0);
+		prt_screen(3, 0, 1,"上传日志失败!\n");
+		proclog("ERR:SERVER return:%s",buffer);
+		pclose(fp);
+		return -1;
+	}
+	/*
+	else if(errno)//timeout
+	{
+	//	alarm(0);
+		proclog("ERR:connection timeout!\n");
+		return -1;
+	}
+	*/
+	else
+	{
+	//	alarm(0);
+		prt_screen(3, 0, 1,"上传日志成功!\n");
+		proclog("%s upload successfully!\n",filename);
+		pclose(fp);
+		return 0;
+	}
+
+}
 static int  need_upload(char *filename)
 {
 	char name[128];
@@ -173,19 +225,7 @@ static int  need_move(char *filename)
 		return 0;
 }
 */
-static delete_old_logs()
-{
-	char delete_filename[32];
-	time_t tt;
-	char cmd[256];
 
-       tt=time(0)-3600*24*10;
-       strftime(delete_filename,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-
-	sprintf(cmd,"rm -f %s/%s*",prog_argu[debug].logbak_dir,delete_filename);
-	//proclog("%s\n",cmd);
-	system(cmd);
-}
 static int tar_today()
 {
 	int fd;
@@ -313,8 +353,7 @@ static short list()
 	}
 	*/
 
-	//delete old logs
-	//delete_old_logs();
+	
 
 	
 
@@ -390,6 +429,183 @@ static void acalarm(int signo)
 {
 	proclog("sigalarm,time out!\n");
 }
+/*
+static void upload_logbak_dir()
+{
+	int i;
+
+	char cmd[256];
+
+	char path[128];
+
+//	DIR * dp;
+//	struct dirent *name;
+	
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].logbak_dir);
+
+
+	/////loop to pack each log file
+	dp = opendir(prog_argu[debug].logbak_dir);
+
+	if(!dp)
+	{
+		proclog("open %s failed!\n",prog_argu[debug].logbak_dir);
+		return;
+	}
+	char logfile[128];
+	char logfile_gz[128];
+	
+	while(name = readdir(dp))
+	{
+		if(strlen(name->d_name)<3)
+			continue;
+
+
+		sprintf(logfile,"%s/%s",prog_argu[debug].logbak_dir,name->d_name);	
+		sprintf(logfile_gz,"%s/%s.tar.gz",prog_argu[debug].logbak_dir,name->d_name);	
+		if(strstr(name->d_name,"tar.gz")==NULL)
+		{
+			sprintf(cmd,"tar zcvf %s %s",logfile_gz,logfile);
+			proclog("%s\n",cmd);
+			system(cmd);
+
+			sprintf("mv %s  ../logbak2",logfile);
+			proclog("%s\n",cmd);
+
+		}
+		else
+		{
+			strcpy(logfile_gz,logfile);
+		}
+
+/////////
+		if(!ftp_upload(logfile_gz))
+		{
+			sprintf(cmd,"mv %s %s",name->d_name,"../logbak2");
+			proclog("%s\n",cmd);
+			system(cmd);
+			
+		}
+	}
+	closedir(dp);
+
+	
+//	chdir(path);
+}
+*/
+
+static void pack_logbak_dir()
+{
+	int i;
+
+	char cmd[1024];
+
+	char path[128];
+
+	DIR * dp;
+	struct dirent *name;
+	
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].logbak_dir);
+
+
+	/////loop to pack each log file
+
+	proclog("begin to pack logbak...\n");
+	dp = opendir(".");
+
+	if(!dp)
+	{
+		proclog("open %s failed!\n",prog_argu[debug].logbak_dir);
+		return;
+	}
+	char logfile[128];
+	char logfile_gz[128];
+	
+	while(name = readdir(dp))
+	{
+		if(strlen(name->d_name)<3)
+			continue;
+
+
+//		sprintf(logfile,"%s/%s",prog_argu[debug].logbak_dir,name->d_name);	
+//		sprintf(logfile_gz,"%s/%s.tar.gz",prog_argu[debug].logbak_dir,name->d_name);	
+		if(strstr(name->d_name,"tar.gz")==NULL)
+		{
+			sprintf(cmd,"tar zcvf %s.tar.gz %s",name->d_name,name->d_name);
+			proclog("%s\n",cmd);
+			system(cmd);
+
+			sprintf(cmd,"mv %s  ../logbak2",name->d_name);
+			proclog("%s\n",cmd);
+			system(cmd);
+
+		}
+
+
+/////////
+
+	}
+	closedir(dp);
+
+	
+	chdir(path);
+
+
+
+
+
+
+	
+}
+
+
+static void upload_logbak_dir()
+{
+	int i;
+
+	char cmd[256];
+
+	DIR * dp;
+	struct dirent *name;
+
+	char gzfile[128];
+
+	/////loop to pack each log file
+	proclog("begin to upload logbak...\n");
+	dp = opendir(prog_argu[debug].logbak_dir);
+
+	if(!dp)
+	{
+		proclog("open %s failed!\n",prog_argu[debug].logbak_dir);
+		return;
+	}
+
+	while(name = readdir(dp))
+	{
+		if(strlen(name->d_name)<3)
+			continue;
+
+		if(strstr(name->d_name,"tar.gz"))
+		{
+			sprintf(gzfile,"%s/%s",prog_argu[debug].logbak_dir,name->d_name);
+			if(!ftp_upload_logbak(name->d_name))
+			{
+				sprintf(cmd,"mv %s ../logbak2",gzfile);
+				proclog("%s\n",cmd);
+				system(cmd);
+				
+			}
+		}
+
+
+/////////
+
+	}
+	closedir(dp);
+
+}
 main(int argc,char **argv)
 {
 
@@ -435,6 +651,8 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].logbak_dir,"../logbak");
 	read_server_config();
+
+	system("mkdir -p ../logbak2");
 	pack_old_logs();
 	
 	while(1)
@@ -443,7 +661,13 @@ main(int argc,char **argv)
 		list();
 		debug=0;
 		list();
+		// pack files in "logbak" dir by day
+
+		pack_logbak_dir();
+		upload_logbak_dir();
 		sleep(10);
+
+		
 	}
 }
 
