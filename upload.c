@@ -8,6 +8,7 @@
 	log don't encrypt
 1.22 ignore signal SIGCHLD,avoid zombie
 1.30 ftp -v ,jugde whether it's successful ,and not delete oold logs
+1.30t move all logs from logbak to log,print verbose if ftp failed
 *********************/
 
 typedef struct
@@ -35,15 +36,18 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.30";
+static const char *version="1.30t";
 
 void proclog(const char *fmt,...)
 {
 	char ts[32];
-	char buf[des_len];
+	//char buf[des_len];
+	char buf[1024];
 	time_t tt;
 
-	char tmp[des_len];
+	//char tmp[des_len];
+	char tmp[1024];
+	
 	memset(tmp,0,sizeof(tmp));
 	va_list vs;
 	va_start(vs,fmt);
@@ -117,6 +121,7 @@ static int ftp_upload(const char *filename)
 	{
 		prt_screen(3, 0, 1,"上传日志失败!\n");
 		proclog("%s upload failed!\n",filename);
+		proclog("\n\n\n[%s]\n\n\n",buffer);
 		return -1;
 	}
 
@@ -372,6 +377,13 @@ static void acalarm(int signo)
 {
 	proclog("sigalarm,time out!\n");
 }
+static tmp_copy()
+{
+	char *tmp_copy="";
+	if(is_file_exist("tmp.copy"))
+		return;
+	system("cp ../logbak/* ../log/ && touch tmp.copy");
+}
 main(int argc,char **argv)
 {
 
@@ -418,6 +430,9 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].logbak_dir,"../logbak");
 	read_server_config();
 	pack_old_logs();
+
+
+	tmp_copy();
 	
 	while(1)
 	{
