@@ -23,7 +23,7 @@ static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivi
 static const char *adb="./adb";
 static const char *prog="apk_install";
 static const char *install_seq_file="../disp/install_seq";
-static const int install_seq=-1;
+static int install_seq=-1;
 static const char *version="1.39";
 
 
@@ -101,6 +101,15 @@ static void printscreen(const char *fmt,...)
 	close(fd);
 }
 */
+static char *last_modify_day(int fd,char *day)
+{
+        struct stat statbuf;
+        fstat(fd,&statbuf);
+        strftime(day,30,"%Y%m%d",(const struct tm *)localtime(&statbuf.st_mtime));
+        //printf("%s\n",ts);
+	return day;
+
+}
 static int count_seq()
 {
         char buf[1024];
@@ -119,19 +128,36 @@ static int count_seq()
 		return -2;
         }
         flock(fd,LOCK_EX);
+
+	//if it's the first time to write the file today,clear it first
+	char last_mday[32];
+	char dtoday[32];
+
+	memset(last_mday,0,sizeof(last_mday));
+	memset(dtoday,0,sizeof(dtoday));
+	
+	if(strcmp(last_modify_day(fd,last_mday),get_day(dtoday)))
+	{
+		 ftruncate(fd,0);
+	}
+
+
+	//begin to read
         n=read(fd,buf,4);
-        if(n<0)
+        if(n<0)//it's an error
         {
                 //printf("n:%d\n",n);
                 ret=-1;
         }
-        else if(n==0)
+
+	
+        if(n==0)//file just be created
         {
                 ftruncate(fd,0);
                 write(fd,"1",1);
                 ret=1;
         }
-        else //n>0
+        else //n>0,most of the times
         {
                 ftruncate(fd,0);
                 count=atoi(buf)+1;
