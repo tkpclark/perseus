@@ -8,6 +8,7 @@
 1.36 ignore signal SIGCHLD,avoid zombie
 1.37 add popen time out
 1.38 write log to sdcard
+1.39 install_seq for phone
 */
 
 //static const char *app_config="../config/app.config";
@@ -21,7 +22,9 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *version="1.38";
+static const char *install_seq_file="../disp/install_seq";
+static const int install_seq=-1;
+static const char *version="1.39";
 
 
 	
@@ -98,6 +101,49 @@ static void printscreen(const char *fmt,...)
 	close(fd);
 }
 */
+static int count_seq()
+{
+        char buf[1024];
+        int n=0;
+
+        int ret=-1;
+        int count=0;
+
+   
+
+        int fd;
+        fd=open(install_seq_file, O_CREAT|O_RDWR|O_APPEND,0600);
+        if(fd <0)
+        {
+         	//proclog("open %s failed!%s\n",install_seq_file,strerror(errno));
+		return -2;
+        }
+        flock(fd,LOCK_EX);
+        n=read(fd,buf,4);
+        if(n<0)
+        {
+                //printf("n:%d\n",n);
+                ret=-1;
+        }
+        else if(n==0)
+        {
+                ftruncate(fd,0);
+                write(fd,"1",1);
+                ret=1;
+        }
+        else //n>0
+        {
+                ftruncate(fd,0);
+                count=atoi(buf)+1;
+                sprintf(buf,"%d",count);
+                write(fd,buf,strlen(buf));
+                ret=count;
+        }
+        flock(fd,LOCK_UN);
+        close(fd);
+
+        return ret;
+}
 
 static void proclog(const char *fmt,...)
 {
@@ -141,7 +187,7 @@ static void proclog(const char *fmt,...)
 
 //print log	
 
-	sprintf(buf,"[%s][%s][%s|%s|%s|%s|%s]:%s",ts,prog,device_info.manufacturer,device_info.model,device_info.imei,device_info.id,version,tmp);
+	sprintf(buf,"[%s][%s][%s|%s|%s|%s|%s|%d]:%s",ts,prog,device_info.manufacturer,device_info.model,device_info.imei,device_info.id,version,install_seq,tmp);
 	//get log file name
 	char filename[128];
 	char box_id[32];
@@ -1021,6 +1067,9 @@ main(int argc,char **argv)
 	//ignore signal SIGCHLD,avoid zombie
 	signew.sa_handler=SIG_IGN;
 	sigaction(SIGCHLD,&signew,0);
+
+
+	install_seq=count_seq();
 	
 	debug=1;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1042,7 +1091,7 @@ main(int argc,char **argv)
 	strcpy(device_info.id,argv[1]);
 
 
-	
+	//---------
 	
 	debug=0;
 	get_device_info();
@@ -1071,3 +1120,4 @@ main(int argc,char **argv)
 	proclog("installation finished!\n");
 	
 }
+
