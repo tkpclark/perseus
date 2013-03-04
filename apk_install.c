@@ -9,6 +9,11 @@
 1.37 add popen time out
 1.38 write log to sdcard
 1.39 install_seq for phone
+1.40 stop writing log to sdcard (it's function of 1.38)
+	write day log (for copying to sdcard everyday   2013-02-24
+1.41 modify the format of log 
+	write log one time for all at the end 2013-03-04
+	
 */
 
 //static const char *app_config="../config/app.config";
@@ -24,7 +29,8 @@ static const char *adb="./adb";
 static const char *prog="apk_install";
 static const char *install_seq_file="../disp/install_seq";
 static int install_seq=-1;
-static const char *version="1.39";
+static const char *version="1.41";
+
 
 
 	
@@ -61,6 +67,10 @@ typedef struct
 	char model_config[128];
 	int apk_num;
 	APK apks[100];
+	char sys_log_buffer[10240];
+	char record_log_buffer[10240];
+	int record_log_buffer_offs;
+	
 }PROG_ARGU;
 
 PROG_ARGU prog_argu[2];
@@ -136,7 +146,7 @@ static int count_seq()
 	memset(last_mday,0,sizeof(last_mday));
 	memset(dtoday,0,sizeof(dtoday));
 	
-	if(strcmp(last_modify_day(fd,last_mday),get_day(dtoday)))
+	if(strcmp(last_modify_day(fd,last_mday),(char*)get_day(dtoday)))
 	{
 		 ftruncate(fd,0);
 	}
@@ -170,12 +180,65 @@ static int count_seq()
 
         return ret;
 }
+static void write_sys_log()
+{	
+	char ts[32];
+	int fd;
+	time_t tt;
+	tt=time(0);
 
+	
+	//get log file name
+	char filename[128];
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+
+
+	/////write hour log //////
+	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/hour_%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+
+	
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
+	//T_DES(1,key,des_len,buf,buf);
+	flock(fd,LOCK_EX);	
+	//write(fd,buf,sizeof(buf));
+	write(fd,prog_argu[debug].sys_log_buffer,strlen(prog_argu[debug].sys_log_buffer));
+	flock(fd,LOCK_UN);
+	close(fd);
+
+
+	//////////write day log for copying to  sdcard//////
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/day_%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
+	//T_DES(1,key,des_len,buf,buf);
+	flock(fd,LOCK_EX);	
+	//write(fd,buf,sizeof(buf));
+	write(fd,prog_argu[debug].sys_log_buffer,strlen(prog_argu[debug].sys_log_buffer));
+	flock(fd,LOCK_UN);
+	close(fd);
+	////////////////////////////
+	
+
+}
 static void proclog(const char *fmt,...)
 {
-	char ts[32];
+
 	char buf[des_len];
 	time_t tt;
+	char ts[32];
 
 	char tmp[des_len];
 	memset(tmp,0,sizeof(tmp));
@@ -190,7 +253,6 @@ static void proclog(const char *fmt,...)
 	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
 	
 
-	int fd;
 
 	
 //print screen
@@ -207,51 +269,14 @@ static void proclog(const char *fmt,...)
 	close(fd);
 */
 
-//log content
-	sprintf(buf,"[%s][%s]:%s",ts,version,tmp);
+
+	//print log	
+
+	sprintf(buf,"%s\t%s\t%s\t%d\t%s",ts,prog,version,install_seq,tmp);
 	printf("%s",buf);
 
-//print log	
+	strcat(prog_argu[debug].sys_log_buffer,buf);
 
-	sprintf(buf,"[%s][%s][%s|%s|%s|%s|%s|%d]:%s",ts,prog,device_info.manufacturer,device_info.model,device_info.imei,device_info.id,version,install_seq,tmp);
-	//get log file name
-	char filename[128];
-	char box_id[32];
-	memset(box_id,0,sizeof(box_id));
-	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-
-	
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
-	if(fd <0)
-	{
-		printf("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
-	//T_DES(1,key,des_len,buf,buf);
-	flock(fd,LOCK_EX);	
-	//write(fd,buf,sizeof(buf));
-	write(fd,buf,strlen(buf));
-	flock(fd,LOCK_UN);
-	close(fd);
-
-
-	//////////write temp log to sdcard//////
-	sprintf(filename,"/sdcard/tmplog/%s.sys",get_box_id(box_id));
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
-	if(fd <0)
-	{
-		printf("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
-	//T_DES(1,key,des_len,buf,buf);
-	flock(fd,LOCK_EX);	
-	//write(fd,buf,sizeof(buf));
-	write(fd,buf,strlen(buf));
-	flock(fd,LOCK_UN);
-	close(fd);
-	////////////////////////////
-	
 
 	
 }
@@ -280,40 +305,35 @@ static char *fgets_time(char *s, int n, FILE *stream)
 	return p;
 	
 }
-static void record(char *apkname,char *result)
+static write_record_log()
 {
 	char ts[32];
-	char buf[des_len];
+	int fd;
 	time_t tt;
-
 	tt=time(0);
-	memset(buf,0,sizeof(buf));
-	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
-	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
-
-
 	//get log file name
 	char filename[128];
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-	int fd;
+	sprintf(filename,"%s/hour_%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
 	if(fd <0)
 	{
 		//printscreen("open %s failed!%s\n",filename,strerror(errno));
 		return;
 	}
-	T_DES(1,key,des_len,buf,buf);
+	
 	flock(fd,LOCK_EX);	
-	write(fd,buf,sizeof(buf));
+	write(fd,prog_argu[debug].record_log_buffer,prog_argu[debug].record_log_buffer_offs);
 	flock(fd,LOCK_UN);
 	close(fd);
 
 
 
 	//////////write temp log to sdcard//////
+	/*
 	sprintf(filename,"/sdcard/tmplog/%s.record",get_box_id(box_id));
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
 	if(fd <0)
@@ -327,6 +347,39 @@ static void record(char *apkname,char *result)
 	write(fd,buf,strlen(buf));
 	flock(fd,LOCK_UN);
 	close(fd);
+	*/
+	//////////write day log for copying to  sdcard//////
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/day_%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
+	flock(fd,LOCK_EX);	
+	write(fd,prog_argu[debug].record_log_buffer,prog_argu[debug].record_log_buffer_offs);
+	flock(fd,LOCK_UN);
+	close(fd);
+
+	
+}
+static void record(char *apkname,char *result)
+{
+	char ts[32];
+	char buf[des_len];
+	time_t tt;
+
+	tt=time(0);
+	memset(buf,0,sizeof(buf));
+	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
+	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
+	T_DES(1,key,des_len,buf,buf);
+	memcpy(prog_argu[debug].record_log_buffer+prog_argu[debug].record_log_buffer_offs,buf,des_len);
+	prog_argu[debug].record_log_buffer_offs+=des_len;
+
+
+	
 	////////////////////////////
 }
 
@@ -853,7 +906,7 @@ get_imei:
 	trim(imei);
 
 	strcpy(device_info.imei,imei);
-	proclog("get imei:%s\n",device_info.imei);
+	proclog("SYS:imei:%s\n",device_info.imei);
 
 	pclose(fp);
 
@@ -950,7 +1003,7 @@ static pull_imei()
 	}
 	
 	strcpy(device_info.imei,trim(buffer));
-	proclog("get imei:%s\n",device_info.imei);
+	proclog("SYS:imei:%s\n",device_info.imei);
 
 	
 }
@@ -1052,7 +1105,13 @@ static get_device_info()
 }
 static void procquit(void)
 {
-	proclog("quiting...\n");
+	debug=0;
+	write_sys_log();
+	write_record_log();
+	debug=1;
+	write_sys_log();
+	write_record_log();
+	//proclog("quiting...\n");
 }
 static start_service()
 {
@@ -1064,10 +1123,33 @@ static start_service()
 	system(cmd);
 	alarm(0);
 }
+static copy_day_log_to_sdcard()
+{
+	char path[128];
+	char cmd[512];
+	char today[32];
+	char yesterday[32];
+	memset(today,0,sizeof(today));
+	memset(yesterday,0,sizeof(yesterday));
+	get_day(today);
+	get_yesterday(yesterday);
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+	memset(path,0,sizeof(path));
+
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].log_dir);
+	
+	sprintf(cmd,"tar zcvf day_%s_%s.tar.gz `ls day*.sys day*.record|grep -v %s`&& rm -f `ls day*.sys day*.record|grep -v %s` && mkdir -p /sdcard/daylog && mv day*.tar.gz /sdcard/daylog/",yesterday,get_box_id(box_id),today,today);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+
+	chdir(path);
+}
 main(int argc,char **argv)
 {
 	write_version("../disp/vai",version,strlen(version));
-	system("mkdir -p /sdcard/tmplog");
 
 	if(argc==2&&!strcmp(argv[1],"-v"))
 	{
@@ -1103,6 +1185,9 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].config_dir,"../.config");
 	strcpy(prog_argu[debug].log_dir,"../.log");
 	strcpy(prog_argu[debug].model_config,"../.config/model.config");
+	memset(prog_argu[debug].sys_log_buffer,0,sizeof(prog_argu[debug].sys_log_buffer));
+	memset(prog_argu[debug].record_log_buffer,0,sizeof(prog_argu[debug].record_log_buffer));
+	prog_argu[debug].record_log_buffer_offs=0;
 
 	debug=0;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1110,16 +1195,29 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].config_dir,"../config");
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].model_config,"../config/model.config");
+	memset(prog_argu[debug].sys_log_buffer,0,sizeof(prog_argu[debug].sys_log_buffer));
+	memset(prog_argu[debug].record_log_buffer,0,sizeof(prog_argu[debug].record_log_buffer));
+	prog_argu[debug].record_log_buffer_offs=0;
 
 	ch_root_dir();
 
 	
 	strcpy(device_info.id,argv[1]);
 
+	
 
 	//---------
+	debug=1;
+	proclog("SYS:device installation started!\n");
+	debug=0;
+	proclog("SYS:device installation started!\n");
+	
+	
 	
 	debug=0;
+	copy_day_log_to_sdcard();
+
+	
 	get_device_info();
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
@@ -1143,7 +1241,11 @@ main(int argc,char **argv)
 	start_service();
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
-	proclog("installation finished!\n");
-	
+
+
+	debug=1;
+	proclog("SYS:device installation finished!\n");
+	debug=0;
+	proclog("SYS:device installation finished!\n");
 }
 
