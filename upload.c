@@ -9,6 +9,7 @@
 1.22 ignore signal SIGCHLD,avoid zombie
 1.30 ftp -v ,jugde whether it's successful ,and not delete oold logs
 1.30t move all logs from logbak to log,print verbose if ftp failed
+1.31 drop function of "pack_old_logs" 		2013-03-04
 *********************/
 
 typedef struct
@@ -36,7 +37,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.30t";
+static const char *version="1.31";
 
 void proclog(const char *fmt,...)
 {
@@ -319,6 +320,7 @@ static void procquit(void)
 	proclog("quiting...\n");
 }
 
+/*
 static pack_old_logs()
 {
 	if(debug)//don't pack old logs when debug
@@ -373,6 +375,7 @@ static pack_old_logs()
 	
 	
 }
+*/
 static void acalarm(int signo)
 {
 	proclog("sigalarm,time out!\n");
@@ -429,7 +432,7 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].logbak_dir,"../logbak");
 	read_server_config();
-	pack_old_logs();
+	//pack_old_logs();
 
 
 	tmp_copy();
