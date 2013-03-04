@@ -7,7 +7,7 @@ version
 1.16 print log to the same logfile (.log) with other models
 	log don't encrypt
 1.17 ignore signal SIGCHLD,avoid zombie
-	
+1.18 add "ERR" before error logs
 *****/
 
 
@@ -57,7 +57,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="1.17";
+static const char *version="1.18";
 
 static void proclog(const char *fmt,...)
 {
@@ -146,7 +146,7 @@ static int ftp_download(const char *filename,const char *server_dir)
 		if(fgets(buffer, sizeof(buffer)-1, fp)!=NULL)
 		{
 			alarm(0);
-			proclog("Fail,FTPSERVER return:%s",buffer);
+			proclog("ERR,FTPSERVER return:%s",buffer);
 			pclose(fp);
 			return -1;
 		}
@@ -203,7 +203,7 @@ static check_crc(char *filename,char *official_crc)
 	}
 	else
 	{
-		proclog("%s crc error[%s][%s]!\n",filename,crc_value,official_crc);
+		proclog("ERR:%s crc error[%s][%s]!\n",filename,crc_value,official_crc);
 		return -1;
 	}
 	
