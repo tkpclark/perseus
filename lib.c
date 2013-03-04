@@ -132,6 +132,15 @@ char *get_day(char *day)
 
 	return day;
 }
+char *get_yesterday(char *yesterday)
+{
+        time_t tt;
+
+        tt=time(0)-3600*24;
+        strftime(yesterday,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+
+	return yesterday;
+}
 
 char *get_hour(char *hour)
 {
