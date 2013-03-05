@@ -10,6 +10,7 @@
 1.30 ftp -v ,jugde whether it's successful ,and not delete oold logs
 1.30t move all logs from logbak to log,print verbose if ftp failed
 1.31 drop function of "pack_old_logs" 		2013-03-04
+1.32 "."--> "_" in need upload
 *********************/
 
 typedef struct
@@ -37,7 +38,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.31";
+static const char *version="1.32";
 
 void proclog(const char *fmt,...)
 {
@@ -132,7 +133,7 @@ static int  need_upload(char *filename)
 	char name[128];
 	char *p;
 	strcpy(name,filename);
-	p=strrchr(name,'.');
+	p=strrchr(name,'_');
 	if(p==NULL)
 		return 0;
 
