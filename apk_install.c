@@ -13,7 +13,12 @@
 	write day log (for copying to sdcard everyday   2013-02-24
 1.41 modify the format of log 
 	write log one time for all at the end 2013-03-04
-	
+1.42 modify hour log name,drop "hour" at the beginning
+	rename day_log  2013-03-05
+1.43 check_imei, 
+	start count_seq after getting imei successfully
+	2013-03-05
+
 */
 
 //static const char *app_config="../config/app.config";
@@ -29,7 +34,7 @@ static const char *adb="./adb";
 static const char *prog="apk_install";
 static const char *install_seq_file="../disp/install_seq";
 static int install_seq=-1;
-static const char *version="1.41";
+static const char *version="1.43";
 
 
 
@@ -120,6 +125,8 @@ static char *last_modify_day(int fd,char *day)
 	return day;
 
 }
+
+
 static int count_seq()
 {
         char buf[1024];
@@ -196,7 +203,7 @@ static void write_sys_log()
 
 	/////write hour log //////
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/hour_%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 
 	
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
@@ -215,7 +222,7 @@ static void write_sys_log()
 
 	//////////write day log for copying to  sdcard//////
 	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/day_%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	sprintf(filename,"%s/%s_%s.day.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
 	if(fd <0)
@@ -286,7 +293,25 @@ static void acalarm(int signo)
 	proclog("sigalarm,time out!\n");
 	//system("nohup ./chk.sh &");
 }
+static int check_imei(char *imei)
+{
+        char *p=NULL;
+        p=imei;
+        int len=0;
+        while(*p)
+        {
+                if(!isdigit(*p))
+                        return -1;
+                len++;
+                p++;
 
+        }
+        if(len!=15)
+                return -1;
+
+	proclog("SYS:imei:%s\n",imei);
+        return 0;
+}
 static FILE * popen_time(char *buf,char * mod)
 {
 	FILE *fp;
@@ -316,7 +341,7 @@ static write_record_log()
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/hour_%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
 	if(fd <0)
@@ -350,7 +375,7 @@ static write_record_log()
 	*/
 	//////////write day log for copying to  sdcard//////
 	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/day_%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	sprintf(filename,"%s/%s_%s.day.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
 	if(fd <0)
 	{
@@ -860,6 +885,43 @@ static get_serialno()
 
     pclose(fp);	
 }
+
+static pull_imei()
+{
+	FILE *fp;
+	char buffer[200] = {0};
+	char cmd[512];
+
+	//pull
+	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
+	proclog("%s\n",cmd);
+		
+	if((fp = popen_time(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+
+
+	if(fgets_time(buffer, sizeof(buffer)-1, fp) ==NULL)
+	{
+		proclog("read imei failed!\n");
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+	
+	strcpy(device_info.imei,trim(buffer));
+	if(check_imei(device_info.imei)<0)
+	{
+		proclog("ERR:imei_check failed!imei:%s\n",device_info.imei);
+		exit(0);
+	}
+	
+
+	
+}		
 static get_imei()
 {
 	FILE * fp;
@@ -873,7 +935,10 @@ static get_imei()
 	sprintf(cmd,"%s -s %s shell dumpsys iphonesubinfo",adb,device_info.id);
 get_imei:
 	if(++try_count>2)
+	{
+		pull_imei();
 		return;
+	}
 	proclog("%s[%d]\n",cmd,try_count);
 
 	if((fp = popen_time(cmd,"r")) == NULL)
@@ -906,7 +971,11 @@ get_imei:
 	trim(imei);
 
 	strcpy(device_info.imei,imei);
-	proclog("SYS:imei:%s\n",device_info.imei);
+	if(check_imei(device_info.imei)<0)
+	{
+		proclog("ERR:imei_check failed!imei:%s\n",device_info.imei);
+		exit(0);
+	}
 
 	pclose(fp);
 
@@ -976,37 +1045,7 @@ static pull_imei()
 }
 */
 //./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa
-static pull_imei()
-{
-	FILE *fp;
-	char buffer[200] = {0};
-	char cmd[512];
 
-	//pull
-	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
-	proclog("%s\n",cmd);
-		
-	if((fp = popen_time(cmd,"r")) == NULL)
-	{
-		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to execute:%s\n",cmd);
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-
-
-	if(fgets_time(buffer, sizeof(buffer)-1, fp) ==NULL)
-	{
-		proclog("read imei failed!\n");
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-	
-	strcpy(device_info.imei,trim(buffer));
-	proclog("SYS:imei:%s\n",device_info.imei);
-
-	
-}
 static get_name(char *buffer,char *name)
 {
         char *p, *q;
@@ -1140,7 +1179,7 @@ static copy_day_log_to_sdcard()
 	getcwd(path,sizeof(path));
 	chdir(prog_argu[debug].log_dir);
 	
-	sprintf(cmd,"tar zcvf day_%s_%s.tar.gz `ls day*.sys day*.record|grep -v %s`&& rm -f `ls day*.sys day*.record|grep -v %s` && mkdir -p /sdcard/daylog && mv day*.tar.gz /sdcard/daylog/",yesterday,get_box_id(box_id),today,today);
+	sprintf(cmd,"tar zcvf %s_%s.day.tar.gz `ls *.day.sys *.day.record|grep -v %s`&& rm -f `ls *.day.sys *.day.record|grep -v %s` && mkdir -p /sdcard/daylog && mv *.day.tar.gz /sdcard/daylog/",yesterday,get_box_id(box_id),today,today);
 	proclog("%s\n",cmd);
 	system(cmd);
 
@@ -1177,7 +1216,7 @@ main(int argc,char **argv)
 	sigaction(SIGCHLD,&signew,0);
 
 
-	install_seq=count_seq();
+	
 	
 	debug=1;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1219,11 +1258,13 @@ main(int argc,char **argv)
 
 	
 	get_device_info();
+	
+	install_seq=count_seq();
+	
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
 	sleep(1);
-	if(strlen(device_info.imei)<4)
-		pull_imei();
+	
 
 	debug=1;
 	//get_device_info();
