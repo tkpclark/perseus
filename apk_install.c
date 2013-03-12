@@ -18,7 +18,8 @@
 1.43 check_imei, 
 	start count_seq after getting imei successfully
 	2013-03-05
-
+1.44 move function of copy_day_log_to_sdcard() to upload module
+	2013-03-07
 */
 
 //static const char *app_config="../config/app.config";
@@ -34,7 +35,7 @@ static const char *adb="./adb";
 static const char *prog="apk_install";
 static const char *install_seq_file="../disp/install_seq";
 static int install_seq=-1;
-static const char *version="1.43";
+static const char *version="1.44";
 
 
 
@@ -1162,30 +1163,7 @@ static start_service()
 	system(cmd);
 	alarm(0);
 }
-static copy_day_log_to_sdcard()
-{
-	char path[128];
-	char cmd[512];
-	char today[32];
-	char yesterday[32];
-	memset(today,0,sizeof(today));
-	memset(yesterday,0,sizeof(yesterday));
-	get_day(today);
-	get_yesterday(yesterday);
-	char box_id[32];
-	memset(box_id,0,sizeof(box_id));
-	memset(path,0,sizeof(path));
 
-	getcwd(path,sizeof(path));
-	chdir(prog_argu[debug].log_dir);
-	
-	sprintf(cmd,"tar zcvf %s_%s.day.tar.gz `ls *.day.sys *.day.record|grep -v %s`&& rm -f `ls *.day.sys *.day.record|grep -v %s` && mkdir -p /sdcard/daylog && mv *.day.tar.gz /sdcard/daylog/",yesterday,get_box_id(box_id),today,today);
-	proclog("%s\n",cmd);
-	system(cmd);
-
-
-	chdir(path);
-}
 main(int argc,char **argv)
 {
 	write_version("../disp/vai",version,strlen(version));
@@ -1252,10 +1230,10 @@ main(int argc,char **argv)
 	proclog("SYS:device installation started!\n");
 	
 	
-	
+	/*
 	debug=0;
 	copy_day_log_to_sdcard();
-
+	*/
 	
 	get_device_info();
 	
