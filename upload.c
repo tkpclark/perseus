@@ -11,6 +11,12 @@
 1.30t move all logs from logbak to log,print verbose if ftp failed
 1.31 drop function of "pack_old_logs" 		2013-03-04
 1.32 "."--> "_" in need upload
+1.33 do not upload day log any more
+1.34 modify judgement of ftp upload
+1.35 modify log format,splited with tab
+1.36 mv copy_day_log_to_sdcard() from apk_install
+1.37 I just guess,it's no diff with 1.36,but not sure
+
 *********************/
 
 typedef struct
@@ -18,6 +24,7 @@ typedef struct
 	char ip[32];
 	char username[32];
 	char password[32];
+
 	
 }SERVER_INFO;
 
@@ -31,6 +38,7 @@ typedef struct
 
 PROG_ARGU prog_argu[2];
 static const char *failed_upload_dir="/sdcard/log/";
+static const char *send_pos_file="send_log.pos";
 
 
 extern const int des_len;
@@ -38,7 +46,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.32";
+static const char *version="1.37";
 
 void proclog(const char *fmt,...)
 {
@@ -59,7 +67,7 @@ void proclog(const char *fmt,...)
 	tt=time(0);
 	memset(buf,0,sizeof(buf));
 	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
-	sprintf(buf,"[%s][%s][%s]:%s",ts,prog,version,tmp);
+	sprintf(buf,"%s\t%s\t%s\t%s",ts,prog,version,tmp);
 	printf("%s",buf);
 	
 	//get log file name
@@ -111,7 +119,7 @@ static int ftp_upload(const char *filename)
 
 	//proclog("\n\n\n[%s]\n\n\n",buffer);
 
-	if(strstr(buffer,"bytes sent in")&&strstr(buffer,"File receive OK"))
+	if(strstr(buffer,"File receive OK"))
 	{
 	//	alarm(0);
 		prt_screen(3, 0, 1,"上传日志成功!\n");
@@ -192,7 +200,8 @@ static int tar_today()
 		return 1;
 	}
 }
-static short list()
+
+static short upload_log_ftp()
 {
 
 	char hour[8];
@@ -219,6 +228,8 @@ static short list()
 	{
 		if(strlen(name->d_name)<3)
 			continue;
+		if(strstr(name->d_name,"day"))
+			continue;
 		//printf("%s\n",name->d_name);
 		sprintf(upload_file,"%s/%s",prog_argu[debug].log_dir,name->d_name);
 		
@@ -233,81 +244,16 @@ static short list()
 				
 			}
 
-			
-			/*
-			else//whehter work off
-			{
-				
-				if(atoi((char *)get_hour(hour))>=18)
-				{
-					if(!tar_today())
-					{
-						get_day(day);
-						getcwd(path,sizeof(path));
-						chdir(prog_argu[debug].log_dir);
-						sprintf(cmd,"tar zcvf %s.log.tar.gz *",day);
-						proclog("%s\n",cmd);
-						system(cmd);
 
-						sprintf(cmd,"cp %s.log.tar.gz /sdcard/",day);
-						proclog("%s\n",cmd);
-						system(cmd);
-
-						sprintf(cmd,"mv * %s",prog_argu[debug].logbak_dir);
-						proclog("%s\n",cmd);
-						system(cmd);
-
-						chdir(path);
-					}
-				}
-			}
-			*/
 		}
-		/*
-		if(need_move(name->d_name))
-		{
-				//move
-				sprintf(cmd,"mkdir -p %s/tmp",failed_upload_dir);
-				system(cmd);
-				
-				sprintf(cmd,"mv %s %s/tmp",upload_file,failed_upload_dir);
-				proclog("%s\n",cmd);
-				system(cmd);
 
-				unlink(upload_file);
-				tarflag=1;
-		}
-		*/
 		
 		
 	}
 	closedir(dp);
 
-	/*
-	if(tarflag)//tar failed upload files
-	{
-		char ts[32];
-		time_t tt;
-		
-		tt=time(0);
-
-		strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-
-		sprintf(cmd,"tar zcvf %s/%s.tar.gz %s/tmp/*",failed_upload_dir,ts,failed_upload_dir);
-		system(cmd);
-		
-		sprintf(cmd,"rm -f %s/tmp/*",failed_upload_dir);
-		system(cmd);
-		
-	}
-	*/
-
-	//delete old logs
-//	delete_old_logs();
-
-	
-
 }
+
 static read_server_config()
 {
 	read_app_config(prog_argu[debug].app_config,"ip",prog_argu[debug].server_info.ip);
@@ -388,6 +334,30 @@ static tmp_copy()
 		return;
 	system("cp ../logbak/* ../log/ && touch tmp.copy");
 }
+static copy_day_log_to_sdcard()
+{
+	char path[128];
+	char cmd[512];
+	char today[32];
+	char yesterday[32];
+	memset(today,0,sizeof(today));
+	memset(yesterday,0,sizeof(yesterday));
+	get_day(today);
+	get_yesterday(yesterday);
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+	memset(path,0,sizeof(path));
+
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].log_dir);
+	
+	sprintf(cmd,"tar zcvf %s_%s.day.tar.gz `ls *.day.sys *.day.record|grep -v %s`&& rm -f `ls *.day.sys *.day.record|grep -v %s` && mkdir -p /sdcard/daylog && mv *.day.tar.gz /sdcard/daylog/",yesterday,get_box_id(box_id),today,today);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+
+	chdir(path);
+}
 main(int argc,char **argv)
 {
 
@@ -436,15 +406,13 @@ main(int argc,char **argv)
 	//pack_old_logs();
 
 
-	tmp_copy();
+	//tmp_copy();
+	copy_day_log_to_sdcard();
 	
-	while(1)
-	{
-		debug=1;
-		list();
-		debug=0;
-		list();
-		sleep(10);
-	}
+	debug=1;
+	upload_log_ftp();
+	debug=0;
+	upload_log_ftp();
+	
 }
 
