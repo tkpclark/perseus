@@ -20,6 +20,7 @@
 	2013-03-05
 1.44 move function of copy_day_log_to_sdcard() to upload module
 	2013-03-07
+1.45 remove the function of 1.36 ,dont' ignore SIGCHLD
 */
 
 //static const char *app_config="../config/app.config";
@@ -35,7 +36,7 @@ static const char *adb="./adb";
 static const char *prog="apk_install";
 static const char *install_seq_file="../disp/install_seq";
 static int install_seq=-1;
-static const char *version="1.44";
+static const char *version="1.45";
 
 
 
@@ -1188,10 +1189,12 @@ main(int argc,char **argv)
 	sigemptyset(&signew.sa_mask);
 	signew.sa_flags=0;
 	sigaction(SIGALRM,&signew,0);
-	
+
+	/*
 	//ignore signal SIGCHLD,avoid zombie
 	signew.sa_handler=SIG_IGN;
 	sigaction(SIGCHLD,&signew,0);
+	*/
 
 
 	
