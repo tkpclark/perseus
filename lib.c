@@ -346,7 +346,7 @@ int is_file_exist(char *filename)
 }
 int sdcard_exists()
 {
-	return is_file_exist("/sdcard");
+	return is_file_exist("/dev/sdcard");
 }
 write_version(char *filename,char *version,int len)
 {
