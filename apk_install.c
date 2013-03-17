@@ -5,22 +5,6 @@
 1.33 printf when proclog 2012-11-29
 1.34 log don't encrypt, add pull_imei function
 1.35 modify pull_mei(./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa)
-1.36 ignore signal SIGCHLD,avoid zombie
-1.37 add popen time out
-1.38 write log to sdcard
-1.39 install_seq for phone
-1.40 stop writing log to sdcard (it's function of 1.38)
-	write day log (for copying to sdcard everyday   2013-02-24
-1.41 modify the format of log 
-	write log one time for all at the end 2013-03-04
-1.42 modify hour log name,drop "hour" at the beginning
-	rename day_log  2013-03-05
-1.43 check_imei, 
-	start count_seq after getting imei successfully
-	2013-03-05
-1.44 move function of copy_day_log_to_sdcard() to upload module
-	2013-03-07
-1.45 remove the function of 1.36 ,dont' ignore SIGCHLD
 */
 
 //static const char *app_config="../config/app.config";
@@ -34,10 +18,7 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static const char *install_seq_file="../disp/install_seq";
-static int install_seq=-1;
-static const char *version="1.45";
-
+static const char *version="1.35b";
 
 
 	
@@ -74,10 +55,6 @@ typedef struct
 	char model_config[128];
 	int apk_num;
 	APK apks[100];
-	char sys_log_buffer[10240];
-	char record_log_buffer[10240];
-	int record_log_buffer_offs;
-	
 }PROG_ARGU;
 
 PROG_ARGU prog_argu[2];
@@ -118,136 +95,12 @@ static void printscreen(const char *fmt,...)
 	close(fd);
 }
 */
-static char *last_modify_day(int fd,char *day)
-{
-        struct stat statbuf;
-        fstat(fd,&statbuf);
-        strftime(day,30,"%Y%m%d",(const struct tm *)localtime(&statbuf.st_mtime));
-        //printf("%s\n",ts);
-	return day;
 
-}
-
-
-static int count_seq()
-{
-        char buf[1024];
-        int n=0;
-
-        int ret=-1;
-        int count=0;
-
-   
-
-        int fd;
-        fd=open(install_seq_file, O_CREAT|O_RDWR|O_APPEND,0600);
-        if(fd <0)
-        {
-         	//proclog("open %s failed!%s\n",install_seq_file,strerror(errno));
-		return -2;
-        }
-        flock(fd,LOCK_EX);
-
-	//if it's the first time to write the file today,clear it first
-	char last_mday[32];
-	char dtoday[32];
-
-	memset(last_mday,0,sizeof(last_mday));
-	memset(dtoday,0,sizeof(dtoday));
-	
-	if(strcmp(last_modify_day(fd,last_mday),(char*)get_day(dtoday)))
-	{
-		 ftruncate(fd,0);
-	}
-
-
-	//begin to read
-        n=read(fd,buf,4);
-        if(n<0)//it's an error
-        {
-                //printf("n:%d\n",n);
-                ret=-1;
-        }
-
-	
-        if(n==0)//file just be created
-        {
-                ftruncate(fd,0);
-                write(fd,"1",1);
-                ret=1;
-        }
-        else //n>0,most of the times
-        {
-                ftruncate(fd,0);
-                count=atoi(buf)+1;
-                sprintf(buf,"%d",count);
-                write(fd,buf,strlen(buf));
-                ret=count;
-        }
-        flock(fd,LOCK_UN);
-        close(fd);
-
-        return ret;
-}
-static void write_sys_log()
-{	
-	char ts[32];
-	int fd;
-	time_t tt;
-	tt=time(0);
-
-	
-	//get log file name
-	char filename[128];
-	char box_id[32];
-	memset(box_id,0,sizeof(box_id));
-
-
-	/////write hour log //////
-	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-
-	
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
-	if(fd <0)
-	{
-		printf("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
-	//T_DES(1,key,des_len,buf,buf);
-	flock(fd,LOCK_EX);	
-	//write(fd,buf,sizeof(buf));
-	write(fd,prog_argu[debug].sys_log_buffer,strlen(prog_argu[debug].sys_log_buffer));
-	flock(fd,LOCK_UN);
-	close(fd);
-
-
-	//////////write day log for copying to  sdcard//////
-	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.day.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
-	if(fd <0)
-	{
-		printf("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
-	//T_DES(1,key,des_len,buf,buf);
-	flock(fd,LOCK_EX);	
-	//write(fd,buf,sizeof(buf));
-	write(fd,prog_argu[debug].sys_log_buffer,strlen(prog_argu[debug].sys_log_buffer));
-	flock(fd,LOCK_UN);
-	close(fd);
-	////////////////////////////
-	
-
-}
 static void proclog(const char *fmt,...)
 {
-
+	char ts[32];
 	char buf[des_len];
 	time_t tt;
-	char ts[32];
 
 	char tmp[des_len];
 	memset(tmp,0,sizeof(tmp));
@@ -262,6 +115,7 @@ static void proclog(const char *fmt,...)
 	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
 	
 
+	int fd;
 
 	
 //print screen
@@ -278,90 +132,21 @@ static void proclog(const char *fmt,...)
 	close(fd);
 */
 
-
-	//print log	
-
-	sprintf(buf,"%s\t%s\t%s\t%d\t%s",ts,prog,version,install_seq,tmp);
+//log content
+	sprintf(buf,"[%s][%s]:%s",ts,version,tmp);
 	printf("%s",buf);
 
-	strcat(prog_argu[debug].sys_log_buffer,buf);
+//print log	
 
-
-	
-}
-
-static void acalarm(int signo)
-{
-	proclog("sigalarm,time out!\n");
-	//system("nohup ./chk.sh &");
-}
-static int check_imei(char *imei)
-{
-        char *p=NULL;
-        p=imei;
-        int len=0;
-        while(*p)
-        {
-                if(!isdigit(*p))
-                        return -1;
-                len++;
-                p++;
-
-        }
-        if(len!=15)
-                return -1;
-
-	proclog("SYS:imei:%s\n",imei);
-        return 0;
-}
-static FILE * popen_time(char *buf,char * mod)
-{
-	FILE *fp;
-	alarm(30);
-//	proclog("set alarming ....\n");
-	fp=popen(buf,mod);
-	alarm(0);
-	return fp;
-}
-static char *fgets_time(char *s, int n, FILE *stream)
-{
-	char *p=NULL;
-	alarm(30);
-	p=fgets(s, n, stream);
-	alarm(0);
-	return p;
-	
-}
-static write_record_log()
-{
-	char ts[32];
-	int fd;
-	time_t tt;
-	tt=time(0);
+	sprintf(buf,"[%s][%s][%s|%s|%s|%s|%s]:%s",ts,prog,device_info.manufacturer,device_info.model,device_info.imei,device_info.id,version,tmp);
 	//get log file name
 	char filename[128];
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
-	if(fd <0)
-	{
-		//printscreen("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
 	
-	flock(fd,LOCK_EX);	
-	write(fd,prog_argu[debug].record_log_buffer,prog_argu[debug].record_log_buffer_offs);
-	flock(fd,LOCK_UN);
-	close(fd);
-
-
-
-	//////////write temp log to sdcard//////
-	/*
-	sprintf(filename,"/sdcard/tmplog/%s.record",get_box_id(box_id));
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
 	if(fd <0)
 	{
@@ -374,23 +159,10 @@ static write_record_log()
 	write(fd,buf,strlen(buf));
 	flock(fd,LOCK_UN);
 	close(fd);
-	*/
-	//////////write day log for copying to  sdcard//////
-	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.day.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
-	if(fd <0)
-	{
-		printf("open %s failed!%s\n",filename,strerror(errno));
-		return;
-	}
-	flock(fd,LOCK_EX);	
-	write(fd,prog_argu[debug].record_log_buffer,prog_argu[debug].record_log_buffer_offs);
-	flock(fd,LOCK_UN);
-	close(fd);
 
 	
 }
+
 static void record(char *apkname,char *result)
 {
 	char ts[32];
@@ -401,13 +173,26 @@ static void record(char *apkname,char *result)
 	memset(buf,0,sizeof(buf));
 	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
 	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
+
+
+	//get log file name
+	char filename[128];
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	int fd;
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
+	if(fd <0)
+	{
+		//printscreen("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
 	T_DES(1,key,des_len,buf,buf);
-	memcpy(prog_argu[debug].record_log_buffer+prog_argu[debug].record_log_buffer_offs,buf,des_len);
-	prog_argu[debug].record_log_buffer_offs+=des_len;
-
-
-	
-	////////////////////////////
+	flock(fd,LOCK_EX);	
+	write(fd,buf,sizeof(buf));
+	flock(fd,LOCK_UN);
+	close(fd);
 }
 
 
@@ -439,13 +224,13 @@ static get_config_apks()
 	//read config
 	char buffer[256];
 	
-	fgets_time(buffer,sizeof(buffer),fp);
+	fgets(buffer,sizeof(buffer),fp);
 	device_info.apk_num=atoi(trim(buffer));
 
 	int i;
 	for(i=0;i<device_info.apk_num;i++)
 	{
-		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:config:%s num error\n",device_info.config_name);
 			proclog("ERR:config:%s num error\n",device_info.config_name);
@@ -590,13 +375,13 @@ static push_config()
 	char cmd[512];
 	sprintf(cmd,"%s -s %s push %s %sinception.config 2>&1",adb,device_info.id,config_name,device_config_dir);
 	proclog("%s\n",cmd);
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
-	if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+	if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 	{
 		//printscreen("ERR:read failed in push_config\n");
 		proclog("ERR:read failed in push_config\n");
@@ -627,7 +412,7 @@ static int uninstall_apk(const char *pkg_name)
 	proclog("%s\n",cmd);
 
 uninstall:
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -637,7 +422,7 @@ uninstall:
 	int i=0;
 	for(i=0;i<1;i++)
 	{
-		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in uninstall_monitor\n");
 			exit(0);
@@ -703,8 +488,9 @@ static install_one_apk(char *apk)
 	char cmd[512];
 	int try_count=0;
 	
+
 	//printscreen("%s start installing...\n",apk);
-	
+	alarm(60);
 
 	if(!apk_exist(apk))
 	{
@@ -714,7 +500,6 @@ static install_one_apk(char *apk)
 	}
 	char pkg[128];
 	get_pkg_name_by_apk(apk,pkg);
-
 install:
 	if(++try_count >=3)
 		goto install_end;
@@ -722,17 +507,17 @@ install:
 	
 	sprintf(cmd,"%s -s %s shell pm path %s",adb,device_info.id,pkg);
 	proclog("%s\n",cmd);
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		goto install;
 	}
-	if(fgets_time(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
+	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
 	{
 		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
 		proclog("%s\n",cmd);
-		system(cmd); 
+		system(cmd);
 		
 	}
 	
@@ -742,7 +527,7 @@ install:
 	sprintf(cmd,"%s -s %s install -r %s",adb,device_info.id,apk);
 	proclog("%s\n",cmd);
 	
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -753,7 +538,7 @@ install:
 	for(i=0;i<2;i++)
 	{
 		//
-		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in install_one_apk\n");
 			pclose(fp);
@@ -793,13 +578,6 @@ install:
 
 install_end:
 	strcpy(result,trim(buffer));
-	//if time out, set right hint of result
-	if(!strstr(result,"Success") && !(strstr(result,"Failure")) )
-	{
-		strcpy(result,"Failure timeout");
-	}
-
-	
 	if(!strstr(apk,monitor_apk))
 		record(apk,result);
 	return;
@@ -822,7 +600,7 @@ static start_monitor(const char *activity)
 start_moni:
 	if(++try_count> 3)
 		return;
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -832,7 +610,7 @@ start_moni:
 	int i=0;
 	for(i=0;i<1;i++)
 	{
-		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed in start_monitor\n");
 			sleep(1);
@@ -874,56 +652,19 @@ static get_serialno()
 	char serialno[64];
 	char cmd[512];
 	sprintf(cmd,"%s -s %s get-serialno",adb,device_info.id);
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
-	fgets_time(buffer,sizeof(buffer)-1,fp);
+	fgets(buffer,sizeof(buffer)-1,fp);
 	strcpy(serialno,buffer);
 	trim(serialno);
 	strcpy(device_info.serialno,serialno);
 
     pclose(fp);	
 }
-
-static pull_imei()
-{
-	FILE *fp;
-	char buffer[200] = {0};
-	char cmd[512];
-
-	//pull
-	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
-	proclog("%s\n",cmd);
-		
-	if((fp = popen_time(cmd,"r")) == NULL)
-	{
-		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to execute:%s\n",cmd);
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-
-
-	if(fgets_time(buffer, sizeof(buffer)-1, fp) ==NULL)
-	{
-		proclog("read imei failed!\n");
-		uninstall_apk(monitor_apk_pkg);
-		exit(0);
-	}
-	
-	strcpy(device_info.imei,trim(buffer));
-	if(check_imei(device_info.imei)<0)
-	{
-		proclog("ERR:imei_check failed!imei:%s\n",device_info.imei);
-		exit(0);
-	}
-	
-
-	
-}		
 static get_imei()
 {
 	FILE * fp;
@@ -937,13 +678,10 @@ static get_imei()
 	sprintf(cmd,"%s -s %s shell dumpsys iphonesubinfo",adb,device_info.id);
 get_imei:
 	if(++try_count>2)
-	{
-		pull_imei();
 		return;
-	}
 	proclog("%s[%d]\n",cmd,try_count);
 
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -954,7 +692,7 @@ get_imei:
 	int i;
 	for(i=0;i<3;i++)
 	{
-		if(fgets_time(buffer, sizeof(buffer)-1, fp) == NULL)
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed get_imei(),failed to get imei\n");
 			proclog("ERR:read failed get_imei(),failed to get imei\n");
@@ -973,11 +711,7 @@ get_imei:
 	trim(imei);
 
 	strcpy(device_info.imei,imei);
-	if(check_imei(device_info.imei)<0)
-	{
-		proclog("ERR:imei_check failed!imei:%s\n",device_info.imei);
-		exit(0);
-	}
+	proclog("get imei:%s\n",device_info.imei);
 
 	pclose(fp);
 
@@ -1000,7 +734,7 @@ static pull_imei()
 	sprintf(cmd,"%s -s %s pull /sdcard/.imei %s 2>&1",adb,device_info.id,tmpimei);
 	proclog("%s\n",cmd);
 		
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
@@ -1009,7 +743,7 @@ static pull_imei()
 	}
 
 
-	fgets_time(buffer, sizeof(buffer)-1, fp) ;
+	fgets(buffer, sizeof(buffer)-1, fp) ;
 		
 	if(strstr(buffer,"does not exist"))
 	{
@@ -1047,7 +781,37 @@ static pull_imei()
 }
 */
 //./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa
+static pull_imei()
+{
+	FILE *fp;
+	char buffer[200] = {0};
+	char cmd[512];
 
+	//pull
+	sprintf(cmd,"%s -s %s shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa 2>&1",adb,device_info.id);
+	proclog("%s\n",cmd);
+		
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+
+
+	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
+	{
+		proclog("read imei failed!\n");
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+	
+	strcpy(device_info.imei,trim(buffer));
+	proclog("get imei:%s\n",device_info.imei);
+
+	
+}
 static get_name(char *buffer,char *name)
 {
         char *p, *q;
@@ -1093,14 +857,14 @@ static get_prop(char *name,char *value)
 	char cmd[512];
 	sprintf(cmd,"%s -s %s shell getprop",adb,device_info.id);
 	proclog("%s\n",cmd);
-	if((fp = popen_time(cmd,"r")) == NULL)
+	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
 		exit(1);
 	}
 
-	while(fgets_time(buffer,sizeof(buffer)-1,fp))
+	while(fgets(buffer,sizeof(buffer)-1,fp))
 	{
 		memset(_name,0,sizeof(_name));
 		memset(_value,0,sizeof(_value));
@@ -1146,13 +910,7 @@ static get_device_info()
 }
 static void procquit(void)
 {
-	debug=0;
-	write_sys_log();
-	write_record_log();
-	debug=1;
-	write_sys_log();
-	write_record_log();
-	//proclog("quiting...\n");
+	proclog("quiting...\n");
 }
 static start_service()
 {
@@ -1160,11 +918,8 @@ static start_service()
 	sprintf(cmd,"%s -s %s shell am startservice com.shellapp.ui/.ShellService",adb,device_info.id);
 	proclog("%s\n",cmd);
 	//adb shell am startservice com.shellapp.ui/.ShellService
-	alarm(30);
 	system(cmd);
-	alarm(0);
 }
-
 main(int argc,char **argv)
 {
 	write_version("../disp/vai",version,strlen(version));
@@ -1184,30 +939,12 @@ main(int argc,char **argv)
 
 	struct sigaction signew;
 	
-
-	signew.sa_handler=acalarm;
-	sigemptyset(&signew.sa_mask);
-	signew.sa_flags=0;
-	sigaction(SIGALRM,&signew,0);
-
-	/*
-	//ignore signal SIGCHLD,avoid zombie
-	signew.sa_handler=SIG_IGN;
-	sigaction(SIGCHLD,&signew,0);
-	*/
-
-
-	
-	
 	debug=1;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
 	strcpy(prog_argu[debug].apk_dir,"../.apk");
 	strcpy(prog_argu[debug].config_dir,"../.config");
 	strcpy(prog_argu[debug].log_dir,"../.log");
 	strcpy(prog_argu[debug].model_config,"../.config/model.config");
-	memset(prog_argu[debug].sys_log_buffer,0,sizeof(prog_argu[debug].sys_log_buffer));
-	memset(prog_argu[debug].record_log_buffer,0,sizeof(prog_argu[debug].record_log_buffer));
-	prog_argu[debug].record_log_buffer_offs=0;
 
 	debug=0;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1215,37 +952,22 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].config_dir,"../config");
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].model_config,"../config/model.config");
-	memset(prog_argu[debug].sys_log_buffer,0,sizeof(prog_argu[debug].sys_log_buffer));
-	memset(prog_argu[debug].record_log_buffer,0,sizeof(prog_argu[debug].record_log_buffer));
-	prog_argu[debug].record_log_buffer_offs=0;
 
 	ch_root_dir();
 
 	
 	strcpy(device_info.id,argv[1]);
 
-	
 
-	//---------
-	debug=1;
-	proclog("SYS:device installation started!\n");
+	
+	
 	debug=0;
-	proclog("SYS:device installation started!\n");
-	
-	
-	/*
-	debug=0;
-	copy_day_log_to_sdcard();
-	*/
-	
 	get_device_info();
-	
-	install_seq=count_seq();
-	
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
 	sleep(1);
-	
+	if(strlen(device_info.imei)<4)
+		pull_imei();
 
 	debug=1;
 	//get_device_info();
@@ -1263,11 +985,6 @@ main(int argc,char **argv)
 	start_service();
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
-
-
-	debug=1;
-	proclog("SYS:device installation finished!\n");
-	debug=0;
-	proclog("SYS:device installation finished!\n");
+	proclog("installation finished!\n");
+	
 }
-
