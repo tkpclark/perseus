@@ -8,6 +8,13 @@ version
 	log don't encrypt
 1.17 ignore signal SIGCHLD,avoid zombie
 1.18 add "ERR" before error logs
+1.19 modify log format,splited with tab
+	display number of updated symbols
+	2013-03-06
+1.20 modify update log,print "." every time one after updated
+1.21 modify way of display when updating
+
+2.00 tcp upload 2013-03-12
 *****/
 
 
@@ -20,6 +27,9 @@ typedef struct
 	char ip[32];
 	char username[32];
 	char password[32];
+
+	char tcp_server_ip[32];
+	char tcp_server_port[12];
 	
 }SERVER_INFO;
 
@@ -38,6 +48,7 @@ typedef struct
 	char apk_dir[128];
 	char config_dir[128];
 	char log_dir[128];
+	char logbak_dir[128];
 	char app_config[128];
 	char version_config_local[128];
 	FILE_INFO file_info_local[UPD_LST_MAX_NUM];
@@ -57,7 +68,10 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="1.18";
+static const char *version="2.00";
+static const char *send_pos_file="send_log.pos";
+static char bat_buffer[100*1024];
+static int bat_offs=0;
 
 static void proclog(const char *fmt,...)
 {
@@ -96,7 +110,7 @@ static void proclog(const char *fmt,...)
 	*/
 
 	//log content
-	sprintf(buf,"[%s][%s][%s]:%s",ts,prog,version,tmp);
+	sprintf(buf,"%s\t%s\t%s\t%s",ts,prog,version,tmp);
 	printf("%s",buf);
 	
 	//get log file name
@@ -262,8 +276,10 @@ static fetch_all_files()
 	char buffer[des_len];
 	time_t tt;
 
+	int updated_num=0;
+
 	int fd;
-	prt_screen(1, 1, 0,"正在更新安装程序和apk文件......\n");
+	prt_screen(1, 1, 0,"正在更新");
 	fd=open(prog_argu[debug].version_config_local, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600);
 
 	
@@ -287,15 +303,20 @@ static fetch_all_files()
 		{
 			if(fetch(prog_argu[debug].file_info_server[i].filename, prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].crc)==0)
 			{
+				prt_screen(1, 1, 0,".");
 				unlink(destfile);
 				sprintf(cmd,"chmod +x ../tmp/%s",prog_argu[debug].file_info_server[i].filename);
-				proclog("%s\n",cmd);
+				//proclog("%s\n",cmd);
 				system(cmd);
 				
 				sprintf(cmd,"cp ../tmp/%s ../%s",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].local_dir);
-				proclog("%s\n",cmd);
+				//proclog("%s\n",cmd);
 				system(cmd);
 				sprintf(buffer,"%s %s %s %d %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].version,prog_argu[debug].file_info_server[i].crc);
+
+				updated_num++;
+				
+				proclog("updated:%s\n",buffer);
 			}
 			else
 			{
@@ -316,9 +337,11 @@ static fetch_all_files()
 		
 	}
 	close(fd);
+
+
 	
-
-
+	proclog("updated_num:%d\n",updated_num);
+	sleep(2);
 	
 
 }
@@ -327,6 +350,10 @@ static read_server_config(char *config_name)
 	read_app_config(config_name,"ip",prog_argu[debug].server_info.ip);
 	read_app_config(config_name,"username",prog_argu[debug].server_info.username);
 	read_app_config(config_name,"password",prog_argu[debug].server_info.password);
+
+	read_app_config(prog_argu[debug].app_config,"tcp_server_ip",prog_argu[debug].server_info.tcp_server_ip);
+	read_app_config(prog_argu[debug].app_config,"tcp_server_port",prog_argu[debug].server_info.tcp_server_port);
+
 	
 	proclog("config: ip:%s usr:%s pwd:%s\n",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password);
 }
@@ -388,7 +415,7 @@ static get_file_info(const char *config_file,FILE_INFO file_info[])// infomation
 		printf("failed to open %s,%s\n",config_file,strerror(errno));
 		return -1;	
 	}
-	proclog("%s:\n",config_file);
+	//proclog("%s:\n",config_file);
 	char buffer[des_len];
 	int n;
 	char *p=NULL;
@@ -424,7 +451,7 @@ static get_file_info(const char *config_file,FILE_INFO file_info[])// infomation
 		if(p!=NULL)
 			strcpy(file_info[i].crc,trim(p));
 
-		proclog("%d:%s %s %s %d %s\n",i,file_info[i].filename,file_info[i].server_dir,file_info[i].local_dir,file_info[i].version,file_info[i].crc);
+		//proclog("%d:%s %s %s %d %s\n",i,file_info[i].filename,file_info[i].server_dir,file_info[i].local_dir,file_info[i].version,file_info[i].crc);
 
 		i++;
 
@@ -590,6 +617,350 @@ static void acalarm(int signo)
 {
 	proclog("sigalarm,time out!\n");
 }
+
+
+
+
+/*********for tcp upload************/
+static short writeall(int sd,char *buf,int num)
+{
+int j;
+lp:
+if((j=write(sd,buf,num))!=num)
+   if(j==-1)
+     if(errno==EWOULDBLOCK || errno==EAGAIN)
+      goto lp;
+     else
+      return(-1);
+   else
+     { 
+       num-=j;
+       buf+=j;       
+       goto lp;
+     }
+return 0;
+}
+
+static int send_real(int sockfd,char *filename,int send_pos,int posfd)
+{
+	char buffer[256];
+	*(int*)(bat_buffer)=htonl(bat_offs);
+	alarm(20);
+	if(writeall(sockfd,bat_buffer,bat_offs+sizeof(int))<0)
+	{
+		proclog("ERR:write all failed times, %s\n",strerror(errno));
+		return -1;
+	}
+	//read response
+	recv(sockfd,buffer,4,MSG_WAITALL);
+	alarm(0);
+	int resp=ntohl(*(int*)(buffer));
+	printf("sending %d bytes,pos %d,resp:0x%x\n",bat_offs,send_pos,resp);
+
+	if(resp!=0x4F500000)
+	{
+		proclog("server response failed:%x\n",resp);
+		return -1;
+	}
+
+	
+
+	//write pos file
+	sprintf(buffer,"%s:%d",filename,send_pos);
+	//printf("pos:%s\n",buffer);
+	lseek(posfd,0,SEEK_SET);
+	ftruncate(posfd,0);
+	write(posfd,buffer,strlen(buffer));
+
+	prt_screen(1, 1, 0, ".");
+
+	bat_offs=0;
+	return 0;
+}
+static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
+{
+	int fd=0;
+	char buffer[1024];
+	char cmd[128];
+	int try_count=0;
+	
+	char tmp[256];
+
+	printf("===file:%s,pos:%d===\n",filename,send_pos);
+
+	//get extend name
+	char *p=strrchr(filename,'.');
+	char ext_name[12];
+	strcpy(ext_name,p+1);
+	strcat(ext_name,"\t");
+
+	
+
+	//open file
+	if(( fd = open(filename,0)) < 0)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to open:%s,%s\n",filename,strerror(errno));
+		return -1;
+	}
+
+	/*
+	//get file size
+	int filesize = lseek(fd,0,SEEK_CUR);
+	if(filesize < 0)
+	{
+		proclog("get filesize failed,%s\n",strerror(errno));
+		return -1;
+	}
+	*/
+	//set file postion
+
+	if(lseek(fd,send_pos,SEEK_SET)<0)
+	{
+		proclog("ERR:Fail to fseek of file %s,pos %d,%s\n",filename,send_pos,strerror(errno));
+		return -1;
+	}
+	
+	//send file line by line
+	int n=0;
+	int read_count=0;
+	int send_count=0;
+	int send_len=0;
+	while(1)
+	{
+		read_count=0;
+		send_count=0;
+		
+	read_data:
+		if(++read_count >= 3)
+				return -1;
+		n=read(fd,buffer,des_len);
+		if(n<0)//error
+		{
+			proclog("ERR:read failed %d times",read_count);
+			goto read_data;
+			
+			
+		}
+		else if(n==0)//finished reading
+		{
+			if(bat_offs)
+				if(send_real(sockfd, filename, send_pos,posfd)<0)
+					return -1;
+
+			
+			sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
+			printf("%s\n",cmd);
+			system(cmd);
+			ftruncate(posfd,0);
+			printf("finished sending %s\n",filename);
+			break;
+	
+		}
+		else if(n==des_len)//get data
+		{
+			//get pos
+			send_pos=lseek(fd,0,SEEK_CUR);
+			
+			//decrypt
+			T_DES(0,key,des_len,buffer,tmp);
+
+			strcpy(buffer,ext_name);
+			strcat(buffer,tmp);
+
+			
+			memcpy(bat_buffer+sizeof(int)+bat_offs,buffer,strlen(buffer));
+			bat_offs+=strlen(buffer);
+			if(bat_offs > sizeof(bat_buffer)-1024)
+				if(send_real(sockfd, filename, send_pos,posfd)<0)
+					return -1;
+		
+
+			
+		}
+		else
+		{
+			proclog("read return [%d] bytes,%s",n,strerror(errno));
+			return -1;
+		}
+		
+	}
+	close(fd);
+	return 0;
+}
+static int connect_to_server()
+{
+
+	//connect to server
+	int sockfd;
+	struct sockaddr_in servaddr;
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	bzero(&servaddr.sin_zero, 8);
+	servaddr.sin_family = AF_INET;
+	struct  hostent *he;
+	he=gethostbyname(prog_argu[debug].server_info.tcp_server_ip);
+	servaddr.sin_addr.s_addr=*(unsigned long *)he->h_addr; 
+	servaddr.sin_port = htons(atoi(prog_argu[debug].server_info.tcp_server_port));
+
+	int n=-1;
+	int ret=0;
+	alarm(5);
+	n=connect(sockfd,(struct sockaddr*)&servaddr,sizeof(servaddr));
+	alarm(0);
+	if(n<0)
+	{
+		proclog("[%s|%s],connected return[%d]%s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,n,strerror(errno));
+		close(sockfd);
+		prt_screen(2, 0,0,"连接服务器失败!\n");
+		return -1;
+	}
+	else
+	{
+		proclog("connected to [%s|%s] %s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
+		return sockfd;
+	}
+}
+static int server_login(int sockfd)
+{
+	char buffer[128];
+
+	//
+	*(int*)(buffer)=htonl(0x000D2F54);
+
+	//box_id
+	char box_id[32];
+	get_box_id(box_id);
+	proclog("boxid:%s\n",box_id);
+	strcpy(buffer+4,box_id);
+
+	//gzip or not
+	*(int*)(buffer+20)=0;
+
+	alarm(10);
+	if(writeall(sockfd,buffer,24)<0)
+	{
+		proclog("login to [%s:%s] %s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
+		return -1;
+		
+	}
+	
+	recv(sockfd,buffer,4,MSG_WAITALL);
+	alarm(0);
+	
+	int resp=ntohl(*(int*)(buffer));
+	if(resp==0x4C4E0000)
+	{
+		proclog("login to [%s:%s] %s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
+		return 0;
+	}
+	else
+	{
+		proclog("login failed ,return %x\n", resp);
+		prt_screen(2, 1,0,"服务器返回错误代码:%x\n",resp);
+		return -1;
+	}
+
+}
+static upload_log_tcp()
+{
+
+	prt_screen(1, 0, 0,"正在准备上传日志(tcp)...\n"); 
+	prt_screen(2,0,0,"");
+	char cmd[256];
+	DIR * dp;
+	char upload_file[128];
+	int upload_file_num=0;
+	struct dirent *name;
+	char path[256];
+	char logfilename[128];
+	char buf[256];
+	int send_pos=0;
+	int sockfd;
+	
+	
+
+	//printf("debug:%d\n",debug);
+	
+	read_app_config(prog_argu[debug].app_config,"tcp_server_ip",prog_argu[debug].server_info.tcp_server_ip);
+	if(strlen(prog_argu[debug].server_info.tcp_server_ip) <= 0 )
+	{
+		prt_screen(2,0,0,"读取配置文件错误！");
+		return;
+	}
+	read_app_config(prog_argu[debug].app_config,"tcp_server_port",prog_argu[debug].server_info.tcp_server_port);
+	if(strlen(prog_argu[debug].server_info.tcp_server_port) <= 0 )
+	{
+ 		prt_screen(2,0,0,"读取配置文件错误！");
+		return;
+	}
+
+		
+
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].log_dir);
+
+	//connect to server
+	prt_screen(1, 1,0,"正在连接服务器...");
+	sockfd = connect_to_server();
+	if(sockfd<0)
+		return;
+
+	//create session
+	if(server_login(sockfd)<0)
+		return;
+	prt_screen(1, 1,0,"	成功!\n");
+	//open pos file 
+	
+	prt_screen(1, 1,0,"开始上传日志 ");
+	int posfd;
+	int n;
+	posfd=open(send_pos_file, O_CREAT|O_RDWR,0600); 
+	if(posfd <0)
+	{
+		proclog("open %s failed!%s\n",send_pos_file,strerror(errno));
+		return;
+	}
+
+	//get postion
+	n=read(posfd,buf,sizeof(buf));
+	if(n&&strstr(buf,":"))//file is just created
+	{
+		strcpy(logfilename,(char *)strtok(buf,":"));
+		send_pos=atoi(strtok(NULL,":"));
+		//printf("start from %s:%d\n",logfilename,send_pos);
+		if(send_log_tcp(logfilename,send_pos,posfd,sockfd)<0)
+			return -1;
+		upload_file_num++;
+	}
+	//	
+	dp = opendir(prog_argu[debug].log_dir);
+	if(!dp)
+	{
+		return -1;
+	}
+	while(name = readdir(dp))
+	{
+
+		if(!strstr(name->d_name,"day.record"))
+			continue;
+		if(send_log_tcp(name->d_name,0,posfd,sockfd)<0)
+			return -1;
+		upload_file_num++;
+		
+	}
+	
+	closedir(dp);
+	close(posfd);
+	shutdown(sockfd,2);
+	close(sockfd);
+	chdir(path);
+	if(upload_file_num)
+		prt_screen(1, 1, 0, "\n上传日志成功!共%d个文件\n", upload_file_num);
+	else
+		prt_screen(1, 1, 0, "\n暂无日志文件上传!");
+
+}
+//////////////////////////////////////////////
 main(int argc,char **argv)
 {
 	write_version("../disp/vud",version,strlen(version));
@@ -629,6 +1000,7 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].config_dir,"../.config");
 	strcpy(prog_argu[debug].app_config,"../.config/app.config");
 	strcpy(prog_argu[debug].log_dir,"../.log");
+	strcpy(prog_argu[debug].logbak_dir,"../.logbak");
 	strcpy(prog_argu[debug].version_config_local,"../.config/version.config");
 
 	debug=0;
@@ -637,13 +1009,14 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].config_dir,"../config");
 	strcpy(prog_argu[debug].app_config,"../config/app.config");
 	strcpy(prog_argu[debug].log_dir,"../log");
+	strcpy(prog_argu[debug].logbak_dir,"../logbak");
 	strcpy(prog_argu[debug].version_config_local,"../config/version.config");
 	
 	ch_root_dir();
 
 
 
-
+	/*******************************
 	//when box_id doesn't exist, time update is necessary,other wise don't do anything
 	if(is_file_exist("../disp/box_id"))
 	{
@@ -655,6 +1028,7 @@ main(int argc,char **argv)
 		char box_id[32];
 		get_box_id(box_id);
 	}
+
 	
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 	
@@ -669,8 +1043,11 @@ main(int argc,char **argv)
 	proclog("update finished!\n");
 	prt_screen(1, 1,0,"更新结束!\n");
 
+	**********************************/
+	sleep(1);
+	if(upload_log_tcp()<0)
+		prt_screen(2, 0, 0, "日志上传失败!\n");
 	
-	
-	
+	sleep(1);
 }	
 
