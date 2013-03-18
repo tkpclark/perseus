@@ -18,6 +18,7 @@
 1.37 I just guess,it's no diff with 1.36,but not sure
 1.38 	check whether /dev/sdcard exists before copy day log 2013-03-16
 	modify judement of whether sdcard exist(/sdcard-->/dev/sdcard),because 
+1.39 remove function of copying day log to sdcard
 
 *********************/
 
@@ -48,7 +49,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.38";
+static const char *version="1.39";
 
 void proclog(const char *fmt,...)
 {
@@ -415,7 +416,7 @@ main(int argc,char **argv)
 	//pack_old_logs();
 
 	//tmp_copy();
-	copy_day_log_to_sdcard();
+	//copy_day_log_to_sdcard();
 	
 	debug=1;
 	upload_log_ftp();
