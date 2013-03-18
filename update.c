@@ -15,6 +15,8 @@ version
 1.21 modify way of display when updating
 
 2.00 tcp upload 2013-03-12
+2.01 if box startup for 2 times a day,there would be two logs for this day, the second
+	could cover the first,so modify"mv" to "cat >>"
 *****/
 
 
@@ -68,7 +70,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.00";
+static const char *version="2.01";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -749,7 +751,8 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 					return -1;
 
 			
-			sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
+			//sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
+			sprintf(cmd, "cat %s >> %s/%s  && rm %s",filename,prog_argu[debug].logbak_dir,filename,filename);
 			printf("%s\n",cmd);
 			system(cmd);
 			ftruncate(posfd,0);
