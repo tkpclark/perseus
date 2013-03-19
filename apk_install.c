@@ -8,6 +8,7 @@
 1.50 modfy log format 
 	write log one time for all  2013-03-17
 1.51 check_imei 2013-03-19
+1.52 install seq 2013-03-19
 */
 
 //static const char *app_config="../config/app.config";
@@ -21,8 +22,9 @@ static const char *monitor_apk_pkg_setup="com.aisidi.AddShortcutFormPKN/.AddShor
 static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivity";
 static const char *adb="./adb";
 static const char *prog="apk_install";
-static int install_seq;
-static const char *version="1.51";
+static int install_seq=0;
+static const char *install_seq_file="../disp/install_seq";
+static const char *version="1.52";
 
 
 	
@@ -102,6 +104,76 @@ static void printscreen(const char *fmt,...)
 	close(fd);
 }
 */
+static char *last_modify_day(int fd,char *day)
+{
+        struct stat statbuf;
+        fstat(fd,&statbuf);
+        strftime(day,30,"%Y%m%d",(const struct tm *)localtime(&statbuf.st_mtime));
+        //printf("%s\n",ts);
+	return day;
+
+}
+
+static int count_seq()
+{
+        char buf[1024];
+        int n=0;
+
+        int ret=-1;
+        int count=0;
+
+   
+
+        int fd;
+        fd=open(install_seq_file, O_CREAT|O_RDWR|O_APPEND,0600);
+        if(fd <0)
+        {
+         	//proclog("open %s failed!%s\n",install_seq_file,strerror(errno));
+		return -2;
+        }
+        flock(fd,LOCK_EX);
+
+	//if it's the first time to write the file today,clear it first
+	char last_mday[32];
+	char dtoday[32];
+
+	memset(last_mday,0,sizeof(last_mday));
+	memset(dtoday,0,sizeof(dtoday));
+	
+	if(strcmp(last_modify_day(fd,last_mday),(char*)get_day(dtoday)))
+	{
+		 ftruncate(fd,0);
+	}
+
+
+	//begin to read
+        n=read(fd,buf,4);
+        if(n<0)//it's an error
+        {
+                //printf("n:%d\n",n);
+                ret=-1;
+        }
+
+	
+        if(n==0)//file just be created
+        {
+                ftruncate(fd,0);
+                write(fd,"1",1);
+                ret=1;
+        }
+        else //n>0,most of the times
+        {
+                ftruncate(fd,0);
+                count=atoi(buf)+1;
+                sprintf(buf,"%d",count);
+                write(fd,buf,strlen(buf));
+                ret=count;
+        }
+        flock(fd,LOCK_UN);
+        close(fd);
+
+        return ret;
+}
 static void write_sys_log()
 {	
 	char ts[32];
@@ -1108,6 +1180,9 @@ main(int argc,char **argv)
 	
 	debug=0;
 	get_device_info();
+	
+	install_seq=count_seq();
+	
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
 	sleep(1);
