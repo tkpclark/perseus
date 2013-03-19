@@ -19,6 +19,9 @@
 1.38 	check whether /dev/sdcard exists before copy day log 2013-03-16
 	modify judement of whether sdcard exist(/sdcard-->/dev/sdcard),because 
 1.39 remove function of copying day log to sdcard
+1.40 sleep before upload,avoid too tight to the last log of apk_install
+	 remove "quiting...."
+	 2013-03-19
 
 *********************/
 
@@ -49,7 +52,7 @@ extern const char *key;
 
 int debug;
 static const char *prog="upload";
-static const char *version="1.39";
+static const char *version="1.40";
 
 void proclog(const char *fmt,...)
 {
@@ -238,7 +241,7 @@ static short upload_log_ftp()
 		
 		if(need_upload(name->d_name))
 		{
-			
+			sleep(5);//sleep before upload,avoid too tight to the last log of apk_install
 			if(!ftp_upload(name->d_name))
 			{
 				sprintf(cmd,"mv %s %s",upload_file,prog_argu[debug].logbak_dir);
@@ -267,7 +270,7 @@ static read_server_config()
 }
 static void procquit(void)
 {
-	proclog("quiting...\n");
+	//proclog("quiting...\n");
 }
 
 /*
