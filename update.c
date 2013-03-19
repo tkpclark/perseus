@@ -17,6 +17,7 @@ version
 2.00 tcp upload 2013-03-12
 2.01 if box startup for 2 times a day,there would be two logs for this day, the second
 	could cover the first,so modify"mv" to "cat >>"
+2.02 remove comment of update procedure
 *****/
 
 
@@ -70,7 +71,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.01";
+static const char *version="2.02";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1019,7 +1020,7 @@ main(int argc,char **argv)
 
 
 
-	/*******************************
+
 	//when box_id doesn't exist, time update is necessary,other wise don't do anything
 	if(is_file_exist("../disp/box_id"))
 	{
@@ -1046,7 +1047,7 @@ main(int argc,char **argv)
 	proclog("update finished!\n");
 	prt_screen(1, 1,0,"更新结束!\n");
 
-	**********************************/
+
 	sleep(1);
 	if(upload_log_tcp()<0)
 		prt_screen(2, 0, 0, "日志上传失败!\n");
