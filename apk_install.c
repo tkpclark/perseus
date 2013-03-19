@@ -7,6 +7,7 @@
 1.35 modify pull_mei(./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa)
 1.50 modfy log format 
 	write log one time for all  2013-03-17
+1.51 check_imei 2013-03-19
 */
 
 //static const char *app_config="../config/app.config";
@@ -21,7 +22,7 @@ static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivi
 static const char *adb="./adb";
 static const char *prog="apk_install";
 static int install_seq;
-static const char *version="1.50";
+static const char *version="1.51";
 
 
 	
@@ -329,7 +330,25 @@ static get_config_apks()
 	
 }
 */
+static int check_imei(char *imei)
+{
+        char *p=NULL;
+        p=imei;
+        int len=0;
+        while(*p)
+        {
+                if(!isdigit(*p))
+                        return -1;
+                len++;
+                p++;
 
+        }
+        if(len!=15)
+                return -1;
+
+	proclog("SYS:imei:%s\n",imei);
+        return 0;
+}
 static get_config_apks_encrypt()
 {
 	int fd1;
@@ -784,10 +803,15 @@ static pull_imei()
 	}
 	
 	strcpy(device_info.imei,trim(buffer));
-	proclog("get imei:%s\n",device_info.imei);
+	if(check_imei(device_info.imei)<0)
+	{
+		proclog("ERR:imei_check failed!imei:%s\n",device_info.imei);
+		exit(0);
+	}
+	
 
 	
-}
+}		
 static get_imei()
 {
 	FILE * fp;
@@ -826,6 +850,9 @@ get_imei:
 			goto get_imei;
 		}
 	}
+
+	pclose(fp);
+	
 	if((p=strstr(buffer,"= "))==NULL)
 	{
 		//printscreen("ERR:info format error:%s",buffer);
@@ -837,9 +864,15 @@ get_imei:
 	trim(imei);
 
 	strcpy(device_info.imei,imei);
-	proclog("get imei:%s\n",device_info.imei);
 
-	pclose(fp);
+	if(check_imei(device_info.imei)<0)
+	{
+		goto get_imei;
+	}
+	
+	//proclog("get imei:%s\n",device_info.imei);
+
+	
 
 }
 /*
