@@ -10,6 +10,9 @@
 	logtime to nana second
 	start two server background(tmp solution)
 	2013-03-27
+1.61 install_seq (after read screen)
+1.62 modify the sequence of log format
+	 set install_id to fix length 
 */
 
 //static const char *app_config="../config/app.config";
@@ -24,7 +27,9 @@ static const char *monitor_apk_pkg_end="com.aisidi.AddShortcutFormPKN/.EndActivi
 static const char *adb="./adb";
 static const char *prog="apk_install";
 static char install_id[32];
-static const char *version="1.60";
+static int install_seq=0;
+static const char *install_seq_file="../disp/install_seq";
+static const char *version="1.62";
 
 
 	
@@ -144,7 +149,7 @@ static void proclog(const char *fmt,...)
 	close(fd);
 */
 	//log content
-	sprintf(buf,"%s\t%s\t%d\t%s\t%s\t%s",ts_nano,install_id,getpid(),prog,version,tmp);
+	sprintf(buf,"%s\t%s\t%s\t%s\t%d\t%s",ts_nano,prog,version,install_id,getpid(),tmp);
 	printf("%s",buf);
 
 
@@ -198,27 +203,60 @@ static void record(char *apkname,char *result)
 	char ts[32];
 	char buf[des_len];
 	time_t tt;
+	struct timeval tv;
+        
 
+//get log time
 	tt=time(0);
 	memset(buf,0,sizeof(buf));
 	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
-	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
+
+	char ts_nano[64];
+	gettimeofday (&tv, NULL);
+	sprintf(ts_nano,"%s.%06d",ts, tv.tv_usec);
+	
+
+	int fd;
 
 
-	//get log file name
+
+	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts_nano,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
+	T_DES(1,key,des_len,buf,buf);
+
+	//get box_id
 	char filename[128];
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
+	get_box_id(box_id);
+
+
+	//hour log
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,get_box_id(box_id));
-	int fd;
+	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,box_id);
+
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
 	if(fd <0)
 	{
 		//printscreen("open %s failed!%s\n",filename,strerror(errno));
 		return;
 	}
-	T_DES(1,key,des_len,buf,buf);
+	
+	flock(fd,LOCK_EX);	
+	write(fd,buf,sizeof(buf));
+	flock(fd,LOCK_UN);
+	close(fd);
+
+
+
+	//day log
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/%s_%s.day.record",prog_argu[debug].log_dir,ts,box_id);
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	if(fd <0)
+	{
+		printf("open %s failed!%s\n",filename,strerror(errno));
+		return;
+	}
 	flock(fd,LOCK_EX);	
 	write(fd,buf,sizeof(buf));
 	flock(fd,LOCK_UN);
@@ -275,6 +313,77 @@ static get_config_apks()
 	
 }
 */
+
+static char *last_modify_day(int fd,char *day)
+{
+        struct stat statbuf;
+        fstat(fd,&statbuf);
+        strftime(day,30,"%Y%m%d",(const struct tm *)localtime(&statbuf.st_mtime));
+        //printf("%s\n",ts);
+	return day;
+
+}
+
+static count_seq()
+{
+        char buf[1024];
+        int n=0;
+
+        int ret=-1;
+        int count=0;
+
+   
+
+        int fd;
+        fd=open(install_seq_file, O_CREAT|O_RDWR|O_APPEND,0600);
+        if(fd <0)
+        {
+         	proclog("ERR:open %s failed!%s\n",install_seq_file,strerror(errno));
+			return -2;
+        }
+        flock(fd,LOCK_EX);
+
+	//if it's the first time to write the file today,clear it first
+	char last_mday[32];
+	char dtoday[32];
+
+	memset(last_mday,0,sizeof(last_mday));
+	memset(dtoday,0,sizeof(dtoday));
+	
+	if(strcmp(last_modify_day(fd,last_mday),(char*)get_day(dtoday)))
+	{
+		 ftruncate(fd,0);
+	}
+
+
+	//begin to read
+        n=read(fd,buf,4);
+        if(n<0)//it's an error
+        {
+                proclog("ERR:read %s failed!%s\n",install_seq_file,strerror(errno));
+                ret=-1;
+        }
+
+	
+        if(n==0)//file just be created
+        {
+                ftruncate(fd,0);
+                write(fd,"1",1);
+                install_seq=1;
+        }
+        else //n>0,most of the times
+        {
+                ftruncate(fd,0);
+                count=atoi(buf)+1;
+                sprintf(buf,"%d",count);
+                write(fd,buf,strlen(buf));
+                install_seq=count;
+        }
+        flock(fd,LOCK_UN);
+        close(fd);
+
+		proclog("SYS:install_seq:%d\n",install_seq);
+}
 
 static get_config_apks_encrypt()
 {
@@ -742,7 +851,7 @@ get_imei:
 	trim(imei);
 
 	strcpy(device_info.imei,imei);
-	proclog("get imei:%s\n",device_info.imei);
+	proclog("SYS:get imei:%s\n",device_info.imei);
 
 	pclose(fp);
 
@@ -839,7 +948,7 @@ static pull_imei()
 	}
 	
 	strcpy(device_info.imei,trim(buffer));
-	proclog("get imei:%s\n",device_info.imei);
+	proclog("SYS:get imei:%s\n",device_info.imei);
 
 	
 }
@@ -963,7 +1072,7 @@ static get_install_id()
 {
         struct timeval tv;
         gettimeofday (&tv, NULL);
-        sprintf(install_id,"%d%d",tv.tv_sec , tv.tv_usec );
+        sprintf(install_id,"%d%06d",tv.tv_sec , tv.tv_usec );
 }
 
 main(int argc,char **argv)
@@ -1007,7 +1116,10 @@ main(int argc,char **argv)
 	strcpy(device_info.id,argv[1]);
 
 
-	
+	debug=1;
+	proclog("SYS:device installation started!\n");
+	debug=0;
+	proclog("SYS:device installation started!\n");
 	
 	debug=0;
 	get_device_info();
@@ -1031,8 +1143,14 @@ main(int argc,char **argv)
 
 	start_monitor(monitor_apk_pkg_end);
 	start_service();
+	count_seq();
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
-	proclog("installation finished!\n");
+
+	
+	debug=1;
+	proclog("SYS:device installation finished!\n");
+	debug=0;
+	proclog("SYS:device installation finished!\n");
 	
 }
