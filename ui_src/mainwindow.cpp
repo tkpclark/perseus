@@ -32,7 +32,7 @@ MainWindow::status_update()
  //       ft.setPointSize(10);
   //      ft.setBold(1);
   //      ui->label->setFont(ft);
-       // ui->label->setWordWrap(true);//×Ô¶¯»»ÐÐ
+       // ui->label->setWordWrap(true);//¡Á
       //  ui->label->setAlignment(Qt::AlignTop);
 
        // ft.setPointSize(10);
@@ -119,12 +119,14 @@ MainWindow::status_update()
             fclose(fp);
             ui->label_vai->setText(buffer);
 
+            //set vud
             memset(buffer,0,sizeof(buffer));
             fp = fopen ("../disp/vud", "a+");
             fgets (buffer, sizeof (buffer) - 1, fp);
             fclose(fp);
             ui->label_vud->setText(buffer);
 
+            //set vul
             memset(buffer,0,sizeof(buffer));
             fp = fopen ("../disp/vul", "a+");
             fgets (buffer, sizeof (buffer) - 1, fp);
@@ -138,6 +140,28 @@ MainWindow::status_update()
             fgets (buffer, sizeof (buffer) - 1, fp);
             fclose(fp);
             ui->label_upload->setText(buffer);
+            
+            //set mac
+            memset(buffer,0,sizeof(buffer));
+            fp = fopen ("../disp/mac", "a+");
+            fgets (buffer, sizeof (buffer) - 1, fp);
+            fclose(fp);
+            ui->label_mac->setText(buffer);
+            
+            //set ip
+            memset(buffer,0,sizeof(buffer));
+            fp = fopen ("../disp/ip", "a+");
+            fgets (buffer, sizeof (buffer) - 1, fp);
+            fclose(fp);
+            ui->label_ip->setText(buffer);
+
+
+            //set install_seq
+            memset(buffer,0,sizeof(buffer));
+            fp = fopen ("../disp/install_seq", "a+");
+            fgets (buffer, sizeof(buffer)-1, fp);
+            fclose(fp);
+            ui->label_install_seq->setText(buffer);
 
          }
 
