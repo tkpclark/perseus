@@ -21,6 +21,7 @@ version
 2.03 reset new mac
 2.04 add trunc before wirte ../disp/ip and ../disp/mac
 2.05 delete files before N days
+2.06 copy day logs under ../log and ../logbak when sdcard exists
 *****/
 
 
@@ -79,7 +80,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.05";
+static const char *version="2.06";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1084,6 +1085,31 @@ static delete_old_logs()
 	
 	
 }
+static copy_day_logs()
+{
+	char sdcard_day_dir[]="/sdcard/daylogs";
+	char cmd[512];
+	if(sdcard_exists())
+	{
+		sprintf(cmd,"mkdir -p /sdcard/daylogs");
+		proclog("%s\n",cmd);
+		system(cmd);
+
+		sprintf(cmd,"cp %s/*day* %s",prog_argu[debug].log_dir,sdcard_day_dir);
+		proclog("%s\n",cmd);
+		system(cmd);
+
+		sprintf(cmd,"cp %s/*day* %s",prog_argu[debug].logbak_dir,sdcard_day_dir);
+		proclog("%s\n",cmd);
+		system(cmd);
+
+	}
+	else
+	{
+		proclog("sdcard doesn't exist, skip copying day log!");
+	}
+
+}
 //////////////////////////////////////////////
 main(int argc,char **argv)
 {
@@ -1144,6 +1170,9 @@ main(int argc,char **argv)
 	//delete old files
 	delete_old_logs();
 	
+	//copy day logs when sdcard exists
+	copy_day_logs();
+
 	
 	//copy day log to sdcard
 
