@@ -18,10 +18,18 @@ version
 2.01 if box startup for 2 times a day,there would be two logs for this day, the second
 	could cover the first,so modify"mv" to "cat >>"
 2.02 remove comment of update procedure
+2.03 reset new mac
+2.04 add trunc before wirte ../disp/ip and ../disp/mac
+2.05 delete files before N days
 *****/
 
 
 #include "com.h"
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <arpa/inet.h>
 
 #define UPD_LST_MAX_NUM 300
 
@@ -71,7 +79,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.02";
+static const char *version="2.05";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -964,6 +972,118 @@ static upload_log_tcp()
 		prt_screen(1, 1, 0, "\n暂无日志文件上传!");
 
 }
+static get_local_ip(char *ip)
+{
+	int sock;
+	struct sockaddr_in sin;
+	struct ifreq ifr;
+	
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock == -1)
+	{
+		perror("socket");
+		return -1;
+	}
+	
+	strncpy(ifr.ifr_name, "eth0", IFNAMSIZ);
+	ifr.ifr_name[IFNAMSIZ - 1] = 0;
+	
+	if (ioctl(sock, SIOCGIFADDR, &ifr) < 0)
+	{
+		perror("ioctl");
+		return -1;
+	}
+	
+	memcpy(&sin, &ifr.ifr_addr, sizeof(sin));
+	//fprintf(stdout, "eth0: %s\n", inet_ntoa(sin.sin_addr));
+	strcpy(ip,inet_ntoa(sin.sin_addr));
+
+	//return 0;
+}
+static reset_mac()
+{
+	
+	//generate a new mac address
+	
+	char mac[128];
+	memset(mac, 0, sizeof(mac));
+	char box_id[32];
+	get_box_id(box_id);
+	strcpy(mac, "08:90:00:");
+	
+	char *p=box_id;
+	p= box_id + strlen(box_id)-6;
+	
+	strncat(mac,p,2);
+	p+=2;
+	strcat(mac,":");
+	
+	strncat(mac,p,2);
+	p+=2;
+	strcat(mac,":");
+	
+	strncat(mac,p,2);
+	
+	proclog("new mac:%s\n", mac);
+	
+	//set mac
+	
+	char cmd[128];
+	
+	strcpy(cmd, "ifconfig eth0 down");
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	sprintf(cmd, "ifconfig eth0 hw ether %s",mac);
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	strcpy(cmd, "ifconfig eth0 up");
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	//write mac to disp file
+	int fd;
+	fd=open("../disp/mac", O_CREAT|O_TRUNC|O_WRONLY,0600);
+	write(fd,mac,strlen(mac));
+	close(fd);
+	
+	//restart dhcp
+	system("killall dhcpcd");
+	sleep(1);
+	system("dhcpcd -LK -d eth0");
+	
+	
+	//write ip to disp file
+	char ip[32];
+	memset(ip,0,sizeof(ip));
+	get_local_ip(ip);
+	fd=open("../disp/ip", O_CREAT|O_TRUNC|O_WRONLY,0600);
+	write(fd,ip,strlen(ip));
+	close(fd);
+	
+}
+static delete_old_logs()
+{
+	
+	char cmd[512];
+	
+	sprintf(cmd,"rm -rf ../logbak2");
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	debug=1;
+	sprintf(cmd,"rm `find %s -mtime +36`",prog_argu[debug].logbak_dir);
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	debug=0;
+	sprintf(cmd,"rm `find %s -mtime +36`",prog_argu[debug].logbak_dir);
+	proclog("%s\n",cmd);
+	system(cmd);
+	
+	
+}
 //////////////////////////////////////////////
 main(int argc,char **argv)
 {
@@ -1018,9 +1138,21 @@ main(int argc,char **argv)
 	
 	ch_root_dir();
 
+	prt_screen(1, 0,0,"正在启动更新程序...\n");
+	
+	
+	//delete old files
+	delete_old_logs();
+	
+	
+	//copy day log to sdcard
 
+	
+	//reset mac
+	reset_mac();
 
-
+	
+	
 	//when box_id doesn't exist, time update is necessary,other wise don't do anything
 	if(is_file_exist("../disp/box_id"))
 	{
@@ -1032,9 +1164,11 @@ main(int argc,char **argv)
 		char box_id[32];
 		get_box_id(box_id);
 	}
+	
+	
 
 	
-	prt_screen(1, 0,0,"正在启动更新程序...\n");
+	
 	
 	//debug
 	debug=1;
