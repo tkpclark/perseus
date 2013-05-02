@@ -22,6 +22,7 @@ version
 2.04 add trunc before wirte ../disp/ip and ../disp/mac
 2.05 delete files before N days
 2.06 copy day logs under ../log and ../logbak when sdcard exists
+2.07 delete files before 36days(old) ---> 21days(now)
 *****/
 
 
@@ -80,7 +81,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.06";
+static const char *version="2.07";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1074,12 +1075,12 @@ static delete_old_logs()
 	system(cmd);
 	
 	debug=1;
-	sprintf(cmd,"rm `find %s -mtime +36`",prog_argu[debug].logbak_dir);
+	sprintf(cmd,"rm `find %s -mtime +21`",prog_argu[debug].logbak_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 	
 	debug=0;
-	sprintf(cmd,"rm `find %s -mtime +36`",prog_argu[debug].logbak_dir);
+	sprintf(cmd,"rm `find %s -mtime +21`",prog_argu[debug].logbak_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 	
