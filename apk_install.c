@@ -13,6 +13,7 @@
 1.61 install_seq (after read screen)
 1.62 modify the sequence of log format
 	 set install_id to fix length 
+1.70 add a column(apk_name) in model.config
 */
 
 //static const char *app_config="../config/app.config";
@@ -29,7 +30,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.62";
+static const char *version="1.70";
 
 
 	
@@ -39,8 +40,9 @@ int debug;
 //char apks[100][128];
 typedef struct
 {
-	char name[128];
+	char pkg_name[128];
 	int shortcut;
+	char apk_name[128];
 }APK;
 
 typedef struct
@@ -384,7 +386,14 @@ static count_seq()
 
 		proclog("SYS:install_seq:%d\n",install_seq);
 }
-
+static trim_comment(char *buffer)
+{
+	char *p=NULL;
+	if((p=strstr(buffer,"#")))
+	{
+		*p=0;
+	}
+}
 static get_config_apks_encrypt()
 {
 	int fd1;
@@ -412,6 +421,7 @@ static get_config_apks_encrypt()
 		T_DES(0,key,des_len,buffer,buffer);
 
 		trim(buffer);
+		trim_comment(buffer);
 		if(buffer[0]=='@')
 		{
 			strcpy(model,trim(buffer+1));
@@ -436,30 +446,43 @@ static get_config_apks_encrypt()
 		T_DES(0,key,des_len,buffer,buffer);
 
 		trim(buffer);
-		if(buffer[0]=='@' ||buffer[0]==0x0d)
+		trim_comment(buffer);
+
+		//meet the next model definition
+		if(buffer[0]=='@' )//||buffer[0]==0x0d)
 		{
 			break;
 		}
-
-		p=strtok(trim(buffer)," ");
-		if(p!=NULL)
-		{
-			strcpy(prog_argu[debug].apks[prog_argu[debug].apk_num].name,p);
-		}
-		else
+		//blank line or comment
+		if(strlen(buffer)==0)
 		{
 			continue;
 		}
 
+
+
+		//pkg_name
+		p=strtok(trim(buffer)," ");
+		if(p!=NULL)
+		{
+			strcpy(prog_argu[debug].apks[prog_argu[debug].apk_num].pkg_name,p);
+		}
+
+		//shortcut
 		p=strtok(NULL," ");
 		if(p!=NULL)
 		{
 			prog_argu[debug].apks[prog_argu[debug].apk_num].shortcut=atoi(p);
 		}
-		else
+
+
+		//apk_name
+		p=strtok(NULL," ");
+		if(p!=NULL)
 		{
-			continue;
+			strcpy(prog_argu[debug].apks[prog_argu[debug].apk_num].apk_name,p);
 		}
+
 		prog_argu[debug].apk_num++;
 
 	}
@@ -499,7 +522,7 @@ static push_config()
 	{
 		if(prog_argu[debug].apks[i].shortcut)
 		{
-			write(fd,prog_argu[debug].apks[i].name,strlen(prog_argu[debug].apks[i].name));
+			write(fd,prog_argu[debug].apks[i].pkg_name,strlen(prog_argu[debug].apks[i].pkg_name));
 			write(fd,enter,strlen(enter));
 		}
 	}
@@ -779,7 +802,14 @@ static install_all()
 	char apk_name[128];
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
-		sprintf(apk_name,"%s/%s.apk",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].name);
+		if(strlen(prog_argu[debug].apks[i].apk_name)>1)
+		{
+			sprintf(apk_name,"%s/%s",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].apk_name);
+		}
+		else
+		{
+			sprintf(apk_name,"%s/%s.apk",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].pkg_name);
+		}
 		install_one_apk(apk_name);
 	}
 	//printscreen("all done, bye!\n");
