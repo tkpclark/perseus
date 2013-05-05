@@ -23,6 +23,7 @@ version
 2.05 delete files before N days
 2.06 copy day logs under ../log and ../logbak when sdcard exists
 2.07 delete files before 36days(old) ---> 21days(now)
+2.10 abolish version ,use crc instead, from int to char*
 *****/
 
 
@@ -49,10 +50,10 @@ typedef struct
 typedef struct
 {
 	char filename[128];
-	int version;
+	char version[64];  //use crc instead
 	char local_dir[128];
 	char server_dir[128];
-	char crc[32];
+	char crc[64];
 	
 }FILE_INFO;
 
@@ -81,7 +82,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.07";
+static const char *version="2.10";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -258,28 +259,41 @@ download:
 	}
 	
 }
-static int get_local_version(char *name)
+static char* get_local_version(char *name,char *local_version)
 {
 	int i=0;
 	while(1)
 	{
 		if(!prog_argu[debug].file_info_local[i].filename[0])
 		{
-			return 0;
+			return NULL;
 		}
 		if(!strcmp(prog_argu[debug].file_info_local[i].filename,name))
 		{
-			return prog_argu[debug].file_info_local[i].version;
+			strcpy(local_version,prog_argu[debug].file_info_local[i].version);
+			//return prog_argu[debug].file_info_local[i].version;
+			return local_version;
 		}
 		i++;
 	}
 }
 static is_new(int i)
 {
-	if(prog_argu[debug].file_info_server[i].version > get_local_version(prog_argu[debug].file_info_server[i].filename))
+	char local_version[64];
+	memset(local_version,0,sizeof(local_version));
+	get_local_version(prog_argu[debug].file_info_server[i].filename,local_version);
+	//proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
+	if(strcmp(prog_argu[debug].file_info_server[i].version ,local_version))
+	{
+		proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
 		return 1;
+	}
 	else
+	{
+		//proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
 		return 0;
+	}
+
 }
 static fetch_all_files()
 {
@@ -305,7 +319,7 @@ static fetch_all_files()
 
 		memset(buffer,0,sizeof(buffer));
 		//delte file
-		if(prog_argu[debug].file_info_server[i].version==0)
+		if(!strcmp(prog_argu[debug].file_info_server[i].version,"0"))
 		{
 			unlink(destfile);
 			i++;
@@ -325,7 +339,7 @@ static fetch_all_files()
 				sprintf(cmd,"cp ../tmp/%s ../%s",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].local_dir);
 				//proclog("%s\n",cmd);
 				system(cmd);
-				sprintf(buffer,"%s %s %s %d %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].version,prog_argu[debug].file_info_server[i].crc);
+				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].version,prog_argu[debug].file_info_server[i].crc);
 
 				updated_num++;
 				
@@ -333,15 +347,15 @@ static fetch_all_files()
 			}
 			else
 			{
-				//proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
-				sprintf(buffer,"%s %s %s %d %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
+				proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
+				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
 			}
 			
 			
 		}
 		else//dont need update
 		{
-			sprintf(buffer,"%s %s %s %d %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
+			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
 		}
 
 		T_DES(1,key,des_len,buffer,buffer);
@@ -458,13 +472,14 @@ static get_file_info(const char *config_file,FILE_INFO file_info[])// infomation
 	
 		p=strtok(NULL," ");
 		if(p!=NULL)
-			file_info[i].version=atoi(p);
+			//file_info[i].version=atoi(p);
+			strcpy(file_info[i].version,p);
 
 		p=strtok(NULL," ");
 		if(p!=NULL)
 			strcpy(file_info[i].crc,trim(p));
 
-		//proclog("%d:%s %s %s %d %s\n",i,file_info[i].filename,file_info[i].server_dir,file_info[i].local_dir,file_info[i].version,file_info[i].crc);
+		//proclog("%d:%s %s %s %s %s\n",i,file_info[i].filename,file_info[i].server_dir,file_info[i].local_dir,file_info[i].version,file_info[i].crc);
 
 		i++;
 
@@ -1167,7 +1182,7 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 	
-	
+
 	//delete old files
 	delete_old_logs();
 	
@@ -1198,7 +1213,7 @@ main(int argc,char **argv)
 	
 
 	
-	
+
 	
 	//debug
 	debug=1;
