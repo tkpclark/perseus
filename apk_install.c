@@ -13,7 +13,7 @@
 1.61 install_seq (after read screen)
 1.62 modify the sequence of log format
 	 set install_id to fix length 
-1.70 add a column(apk_name) in model.config
+1.70 add a column(apk_name) in model.config,suppose both two column
 */
 
 //static const char *app_config="../config/app.config";
