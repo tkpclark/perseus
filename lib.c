@@ -305,6 +305,7 @@ conn:
 
 
 	//print ip
+	/*
 	FILE *fp;
 	
 	fp = popen("ifconfig |grep Bcast ","r");
@@ -313,7 +314,7 @@ conn:
 		strcpy(buffer,"NULL\n");
 	//proclog("ip address:%s",buffer);
 
-
+	 */
 	//////////
 	alarm(10);
 	n=connect(sockfd,(struct sockaddr*)&servaddr,sizeof(servaddr));
