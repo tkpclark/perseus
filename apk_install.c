@@ -14,6 +14,7 @@
 1.62 modify the sequence of log format
 	 set install_id to fix length 
 1.70 add a column(apk_name) in model.config,suppose both two column
+1.71 value pkg_name when reading config instead of when installing
 */
 
 //static const char *app_config="../config/app.config";
@@ -30,7 +31,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.70";
+static const char *version="1.71";
 
 
 	
@@ -482,6 +483,10 @@ static get_config_apks_encrypt()
 		{
 			strcpy(prog_argu[debug].apks[prog_argu[debug].apk_num].apk_name,p);
 		}
+		else
+		{
+			sprintf(prog_argu[debug].apks[prog_argu[debug].apk_num].apk_name,"%s.apk",prog_argu[debug].apks[prog_argu[debug].apk_num].pkg_name);
+		}
 
 		prog_argu[debug].apk_num++;
 
@@ -607,6 +612,7 @@ uninstall:
 		
 	}
 }
+/*
 static int get_pkg_name_by_apk(char *apk,char *pkg)
 {
         char *p=NULL;
@@ -627,6 +633,7 @@ static int get_pkg_name_by_apk(char *apk,char *pkg)
 
         return 0;
 }
+*/
 static apk_exist(char *apk)
 {
 	int fd;
@@ -642,7 +649,7 @@ static apk_exist(char *apk)
 	}	
 	
 }
-static install_one_apk(char *apk)
+static install_one_apk(char *apk,char *pkg)
 {
 	FILE *fp;
 	char buffer[200] = {0};
@@ -661,8 +668,7 @@ static install_one_apk(char *apk)
 		proclog("ERR:%s doesn't exists!\n",apk);
 		return;
 	}
-	char pkg[128];
-	get_pkg_name_by_apk(apk,pkg);
+
 install:
 	if(++try_count >=3)
 		goto install_end;
@@ -749,7 +755,7 @@ install_end:
 
 static install_monitor()
 {
-	install_one_apk((char*)monitor_apk);
+	install_one_apk((char*)monitor_apk,"add.pkg.name");
 }
 static start_monitor(const char *activity)
 {
@@ -802,15 +808,9 @@ static install_all()
 	char apk_name[128];
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
-		if(strlen(prog_argu[debug].apks[i].apk_name)>1)
-		{
-			sprintf(apk_name,"%s/%s",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].apk_name);
-		}
-		else
-		{
-			sprintf(apk_name,"%s/%s.apk",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].pkg_name);
-		}
-		install_one_apk(apk_name);
+		//apk_name was value when read_config,if there's no the third column in config file,it'd valued with apk append pkgname
+		sprintf(apk_name,"%s/%s",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].apk_name);
+		install_one_apk(apk_name,prog_argu[debug].apks[i].pkg_name);
 	}
 	//printscreen("all done, bye!\n");
 }
