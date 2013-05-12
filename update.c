@@ -24,6 +24,7 @@ version
 2.06 copy day logs under ../log and ../logbak when sdcard exists
 2.07 delete files before 36days(old) ---> 21days(now)
 2.10 abolish version ,use crc instead, from int to char*
+2.11 modify get_local_ip
 *****/
 
 
@@ -82,7 +83,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.10";
+static const char *version="2.11";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -989,34 +990,94 @@ static upload_log_tcp()
 		prt_screen(1, 1, 0, "\n暂无日志文件上传!");
 
 }
+
+static get_local_ip(char *ip)
+{
+	//ifconfig |sed -n '2p'|awk -F'addr:' '{print $2}'|awk '{print $1}'
+	FILE *fp;
+	char buffer[200] = {0};
+	int try_count=0;
+
+	char cmd[512];
+	strcpy(cmd,"/sbin/ifconfig |/bin/sed -n '2p'|/usr/bin/awk -F'addr:' '{print $2}'|awk '{print $1}' ");
+	proclog("%s\n",cmd);
+get_ip:
+	if(try_count++>10)
+	{
+		proclog("ERR:Fail to get ip1\n");
+		strcpy(ip,"ip error");
+		return;
+	}
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		strcpy(ip,"ip error");
+		return;
+	}
+
+
+	if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+	{
+		proclog("ERR:Fail to get ip:%s\n",cmd);
+		strcpy(ip,"ip error");
+		return;
+	}
+	//proclog("buffer:%s\n",buffer);
+	pclose(fp);
+	strcpy(ip,trim(buffer));
+	if(strlen(ip)<6)
+	{
+		sleep(1);
+		goto get_ip;
+	}
+	proclog("ipaddr:%s\n",ip);
+}
+/*
 static get_local_ip(char *ip)
 {
 	int sock;
 	struct sockaddr_in sin;
 	struct ifreq ifr;
-	
+	int try_count=0;
+get_ip:
+	if(try_count++>10)
+	{
+		proclog("ERR:Fail to get ip1\n");
+		strcpy(ip,"ip error");
+		return;
+	}
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock == -1)
 	{
-		perror("socket");
-		return -1;
+		proclog("ERR:Fail to get ip2\n");
+		strcpy(ip,"ip error");
+		return;
 	}
-	
+
 	strncpy(ifr.ifr_name, "eth0", IFNAMSIZ);
 	ifr.ifr_name[IFNAMSIZ - 1] = 0;
-	
+
 	if (ioctl(sock, SIOCGIFADDR, &ifr) < 0)
 	{
-		perror("ioctl");
-		return -1;
+		proclog("ERR:Fail to get ip3\n");
+		strcpy(ip,"ip error");
+		return;
 	}
-	
+
 	memcpy(&sin, &ifr.ifr_addr, sizeof(sin));
 	//fprintf(stdout, "eth0: %s\n", inet_ntoa(sin.sin_addr));
 	strcpy(ip,inet_ntoa(sin.sin_addr));
-
+	if(strlen(ip)<6)
+	{
+		close(sock);
+		sleep(1);
+		goto get_ip;
+	}
+	proclog("ipaddr:%s\n",ip);
 	//return 0;
 }
+*/
 static reset_mac()
 {
 	
@@ -1070,7 +1131,7 @@ static reset_mac()
 	sleep(1);
 	system("dhcpcd -LK -d eth0");
 	
-	
+	sleep(5);
 	//write ip to disp file
 	char ip[32];
 	memset(ip,0,sizeof(ip));
@@ -1230,7 +1291,6 @@ main(int argc,char **argv)
 	sleep(1);
 	if(upload_log_tcp()<0)
 		prt_screen(2, 0, 0, "日志上传失败!\n");
-	
-	sleep(1);
+
 }	
 
