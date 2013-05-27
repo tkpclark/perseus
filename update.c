@@ -25,6 +25,8 @@ version
 2.07 delete files before 36days(old) ---> 21days(now)
 2.10 abolish version ,use crc instead, from int to char*
 2.11 modify get_local_ip
+2.12 don't do anything before get the rightime when the first start
+2.13 day.sys only be store for 3 days
 *****/
 
 
@@ -83,7 +85,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.11";
+static const char *version="2.13";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -572,7 +574,7 @@ static ntpupdate(int flag)
 			new_sys_clock=time(0);
 			if(new_sys_clock-old_sys_clock> 3600*24*3)//i think this means clock update successfully
 			{
-				proclog("time updated successfully! %u-->%u\n",old_sys_clock,new_sys_clock);
+				printf("time updated successfully! %u-->%u\n",old_sys_clock,new_sys_clock);
 				break;
 			}
 		}
@@ -991,29 +993,30 @@ static upload_log_tcp()
 
 }
 
-static get_local_ip(char *ip)
+static get_local_ip()
 {
 	//ifconfig |sed -n '2p'|awk -F'addr:' '{print $2}'|awk '{print $1}'
 	FILE *fp;
 	char buffer[200] = {0};
 	int try_count=0;
+	char ip[32];
 
 	char cmd[512];
 	strcpy(cmd,"/sbin/ifconfig |/bin/sed -n '2p'|/usr/bin/awk -F'addr:' '{print $2}'|awk '{print $1}' ");
-	proclog("%s\n",cmd);
+	printf("%s\n",cmd);
 get_ip:
 	if(try_count++>10)
 	{
-		proclog("ERR:Fail to get ip1\n");
+		printf("ERR:Fail to get ip1\n");
 		strcpy(ip,"ip error");
-		return;
+		goto get_ip_end;
 	}
 	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to execute:%s\n",cmd);
+		printf("ERR:Fail to execute:%s\n",cmd);
 		strcpy(ip,"ip error");
-		return;
+		goto get_ip_end;
 	}
 
 
@@ -1021,7 +1024,7 @@ get_ip:
 	{
 		proclog("ERR:Fail to get ip:%s\n",cmd);
 		strcpy(ip,"ip error");
-		return;
+		goto get_ip_end;
 	}
 	//proclog("buffer:%s\n",buffer);
 	pclose(fp);
@@ -1031,7 +1034,14 @@ get_ip:
 		sleep(1);
 		goto get_ip;
 	}
-	proclog("ipaddr:%s\n",ip);
+get_ip_end:
+	printf("ipaddr:%s\n",ip);
+
+
+	int fd;
+	fd=open("../disp/ip", O_CREAT|O_TRUNC|O_WRONLY,0600);
+	write(fd,ip,strlen(ip));
+	close(fd);
 }
 /*
 static get_local_ip(char *ip)
@@ -1078,6 +1088,7 @@ get_ip:
 	//return 0;
 }
 */
+
 static reset_mac()
 {
 	
@@ -1085,12 +1096,16 @@ static reset_mac()
 	
 	char mac[128];
 	memset(mac, 0, sizeof(mac));
-	char box_id[32];
-	get_box_id(box_id);
+
 	strcpy(mac, "08:90:00:");
 	
-	char *p=box_id;
-	p= box_id + strlen(box_id)-6;
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	char tmp[12];
+	memset(tmp,0,sizeof(tmp));
+	sprintf(tmp,"%06u",tv.tv_usec);
+
+	char *p=tmp;
 	
 	strncat(mac,p,2);
 	p+=2;
@@ -1102,22 +1117,22 @@ static reset_mac()
 	
 	strncat(mac,p,2);
 	
-	proclog("new mac:%s\n", mac);
+	printf("new mac:%s\n", mac);
 	
 	//set mac
 	
 	char cmd[128];
 	
 	strcpy(cmd, "ifconfig eth0 down");
-	proclog("%s\n",cmd);
+	printf("%s\n",cmd);
 	system(cmd);
 	
 	sprintf(cmd, "ifconfig eth0 hw ether %s",mac);
-	proclog("%s\n",cmd);
+	printf("%s\n",cmd);
 	system(cmd);
 	
 	strcpy(cmd, "ifconfig eth0 up");
-	proclog("%s\n",cmd);
+	printf("%s\n",cmd);
 	system(cmd);
 	
 	//write mac to disp file
@@ -1131,15 +1146,11 @@ static reset_mac()
 	sleep(1);
 	system("dhcpcd -LK -d eth0");
 	
-	sleep(5);
-	//write ip to disp file
-	char ip[32];
-	memset(ip,0,sizeof(ip));
-	get_local_ip(ip);
-	fd=open("../disp/ip", O_CREAT|O_TRUNC|O_WRONLY,0600);
-	write(fd,ip,strlen(ip));
-	close(fd);
-	
+	sleep(15);
+
+	get_local_ip();
+
+
 }
 static delete_old_logs()
 {
@@ -1155,11 +1166,21 @@ static delete_old_logs()
 	proclog("%s\n",cmd);
 	system(cmd);
 	
+	sprintf(cmd,"rm `find %s -mtime +3|grep day.sys`",prog_argu[debug].log_dir);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+
+
 	debug=0;
 	sprintf(cmd,"rm `find %s -mtime +21`",prog_argu[debug].logbak_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 	
+	sprintf(cmd,"rm `find %s -mtime +3|grep day.sys`",prog_argu[debug].log_dir);
+	proclog("%s\n",cmd);
+	system(cmd);
+
 	
 }
 static copy_day_logs()
@@ -1243,16 +1264,6 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 	
-
-	//delete old files
-	delete_old_logs();
-	
-	//copy day logs when sdcard exists
-	copy_day_logs();
-
-	
-	//copy day log to sdcard
-
 	
 	//reset mac
 	reset_mac();
@@ -1267,11 +1278,15 @@ main(int argc,char **argv)
 	else
 	{
 		ntpupdate(1);
-		char box_id[32];
-		get_box_id(box_id);
+		set_box_id();
 	}
 	
+
+	//delete old files
+	delete_old_logs();
 	
+	//copy day logs when sdcard exists
+	copy_day_logs();
 
 	
 

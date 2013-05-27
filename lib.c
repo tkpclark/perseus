@@ -39,6 +39,21 @@ char *trim(char *str)
 	strcpy(str,_str);
 	return str;
 }
+char *set_box_id()
+{
+	int fd;
+	char *filename="../disp/box_id";
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	sprintf(box_id,"%u%06u",tv.tv_sec,tv.tv_usec);
+	write(fd,box_id,strlen(box_id));
+
+	close(fd);
+}
 char *get_box_id(char *box_id)
 {
         int fd;
@@ -46,16 +61,12 @@ char *get_box_id(char *box_id)
         fd=open(filename,0);
         if(fd<=0)
         {
-                fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
-                struct timeval tv;
-                gettimeofday(&tv,NULL);
-                sprintf(box_id,"%u%06u",tv.tv_sec,tv.tv_usec);
-                write(fd,box_id,strlen(box_id));
+              strcpy(box_id,"0000000000000000");
         }
         else
         {
                 char tmp[256];
-			memset(tmp,0,sizeof(tmp));
+		memset(tmp,0,sizeof(tmp));
                 read(fd,tmp,sizeof(tmp));
                 strcpy(box_id,tmp);
 		trim(box_id);
