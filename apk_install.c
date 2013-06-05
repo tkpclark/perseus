@@ -15,6 +15,8 @@
 	 set install_id to fix length 
 1.70 add a column(apk_name) in model.config,suppose both two column
 1.71 value pkg_name when reading config instead of when installing
+1.72 memset all variables for device info
+	check_imei
 */
 
 //static const char *app_config="../config/app.config";
@@ -31,7 +33,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.71";
+static const char *version="1.72";
 
 
 	
@@ -835,6 +837,26 @@ static get_serialno()
 
     pclose(fp);	
 }
+static int check_imei(char *imei)
+{
+        char *p=NULL;
+        p=imei;
+        int len=0;
+        while(*p)
+        {
+                if(!isdigit(*p))
+                        return -1;
+                len++;
+                p++;
+
+        }
+        if(len!=15)
+                return -1;
+
+	proclog("SYS:imei:%s\n",imei);
+        return 0;
+}
+
 static get_imei()
 {
 	FILE * fp;
@@ -860,8 +882,10 @@ get_imei:
 	}
 
 	int i;
+
 	for(i=0;i<3;i++)
 	{
+		memset(buffer,0,sizeof(buffer));
 		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
 		{
 			//printscreen("ERR:read failed get_imei(),failed to get imei\n");
@@ -877,6 +901,7 @@ get_imei:
 		sleep(2);
 		goto get_imei;
 	}
+	memset(imei,0,sizeof(imei));
 	strcpy(imei,p+2);
 	trim(imei);
 
@@ -969,16 +994,20 @@ static pull_imei()
 		exit(0);
 	}
 
-
+	memset(buffer,0,sizeof(buffer));
 	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
 	{
 		proclog("read imei failed!\n");
 		uninstall_apk(monitor_apk_pkg);
 		exit(0);
 	}
-	
-	strcpy(device_info.imei,trim(buffer));
-	proclog("SYS:get imei:%s\n",device_info.imei);
+	if(check_imei(trim(buffer)))
+	{
+		proclog("ERR:imei check error! imei:%s,stopping installing\n",buffer);
+		exit(0);
+	}
+	strcpy(device_info.imei,buffer);
+	//proclog("SYS:get imei:%s\n",device_info.imei);
 
 	
 }
@@ -1034,6 +1063,7 @@ static get_prop(char *name,char *value)
 		exit(1);
 	}
 
+	memset(buffer,0,sizeof(buffer));
 	while(fgets(buffer,sizeof(buffer)-1,fp))
 	{
 		memset(_name,0,sizeof(_name));
@@ -1044,6 +1074,7 @@ static get_prop(char *name,char *value)
 		get_value(buffer,_value);
 		strcpy(value,_value);
 			break;
+		memset(buffer,0,sizeof(buffer));
 	//printf("name:%s,value:%s\n",name,value);
 	}
 	pclose(fp);
@@ -1057,15 +1088,18 @@ static get_device_info()
 	get_imei();
 
 	char model[64];
+	memset(model,0,sizeof(model));
 	get_prop("ro.product.model",model);
 	strcpy(device_info.model,model);
 
 	char manufacturer[64];
+	memset(manufacturer,0,sizeof(manufacturer));
 	get_prop("ro.product.manufacturer",manufacturer);
 	strcpy(device_info.manufacturer,manufacturer);
 
 
 	char os_version[64];
+	memset(os_version,0,sizeof(os_version));
 	get_prop("ro.build.version.release",os_version);
 	strcpy(device_info.os_version,os_version);
 	/*
@@ -1156,7 +1190,7 @@ main(int argc,char **argv)
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
 	sleep(1);
-	if(strlen(device_info.imei)<4)
+	if(check_imei(device_info.imei))
 		pull_imei();
 
 	debug=1;
