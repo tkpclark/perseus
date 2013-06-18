@@ -17,6 +17,9 @@
 1.71 value pkg_name when reading config instead of when installing
 1.72 memset all variables for device info
 	check_imei
+1.80 phone_id
+1.90 don't do anything until device is online
+1.91 manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
 */
 
 //static const char *app_config="../config/app.config";
@@ -33,7 +36,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.72";
+static const char *version="1.91";
 
 
 	
@@ -57,6 +60,7 @@ typedef struct
 	char	manufacturer[64];
 	char os_version[64];
 	char config_name[32];
+	char phone_id[32];
 //	int apk_num;
 }DEVICE_INFO;
 DEVICE_INFO device_info;
@@ -225,7 +229,7 @@ static void record(char *apkname,char *result)
 
 
 
-	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts_nano,device_info.imei,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
+	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts_nano,device_info.phone_id,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
 	T_DES(1,key,des_len,buf,buf);
 
 	//get box_id
@@ -664,6 +668,14 @@ static install_one_apk(char *apk,char *pkg)
 	//printscreen("%s start installing...\n",apk);
 	alarm(60);
 
+
+	///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
+	if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, " com.taobao.taobao")))
+	{
+		proclog("manufacturer %s, pkg:%s, skip installing!\n", device_info.manufacturer, pkg);
+		return;
+	}
+
 	if(!apk_exist(apk))
 	{
 		//printscreen("ERR:%s doesn't exists!\n",apk);
@@ -853,7 +865,7 @@ static int check_imei(char *imei)
         if(len!=15)
                 return -1;
 
-	proclog("SYS:imei:%s\n",imei);
+	//proclog("SYS:imei:%s\n",imei);
         return 0;
 }
 
@@ -903,10 +915,12 @@ get_imei:
 	}
 	memset(imei,0,sizeof(imei));
 	strcpy(imei,p+2);
-	trim(imei);
+	if(!check_imei(trim(imei)))
+	{
+		strcpy(device_info.imei,imei);
+		proclog("SYS:get imei:%s\n",device_info.imei);
 
-	strcpy(device_info.imei,imei);
-	proclog("SYS:get imei:%s\n",device_info.imei);
+	}
 
 	pclose(fp);
 
@@ -1001,13 +1015,13 @@ static pull_imei()
 		uninstall_apk(monitor_apk_pkg);
 		exit(0);
 	}
-	if(check_imei(trim(buffer)))
+	if(!check_imei(trim(buffer)))
 	{
-		proclog("ERR:imei check error! imei:%s,stopping installing\n",buffer);
-		exit(0);
+		strcpy(device_info.imei,buffer);
+		proclog("SYS:get imei:%s\n",device_info.imei);
 	}
-	strcpy(device_info.imei,buffer);
-	//proclog("SYS:get imei:%s\n",device_info.imei);
+
+	//
 
 	
 }
@@ -1138,7 +1152,75 @@ static get_install_id()
         gettimeofday (&tv, NULL);
         sprintf(install_id,"%d%06d",tv.tv_sec , tv.tv_usec );
 }
+static get_phone_id()
+{
+	//get box id
+	char box_id[32];
+	memset(box_id,0,sizeof(box_id));
+	get_box_id(box_id);
 
+	//copy the last 4 bytes to phone_id
+	char *p=box_id+strlen(box_id)-4;
+	strcpy(device_info.phone_id,p);
+
+	if(check_imei(device_info.imei))
+	{
+		//failed to get imei
+		strcat(device_info.phone_id,install_id);
+	}
+	else
+	{
+		//succeed to get imei
+		strcat(device_info.phone_id,"m");
+		strcat(device_info.phone_id,device_info.imei);
+	}
+
+}
+static is_device_online()
+{
+	FILE *fp;
+	char buffer[512];
+	char cmd[512];
+	sprintf(cmd,"%s devices",adb);
+
+	//proclog("%s\n",cmd);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		exit(1);
+	}
+
+	memset(buffer,0,sizeof(buffer));
+	while(fgets(buffer,sizeof(buffer)-1,fp))
+	{
+		if( strstr(buffer,device_info.id)  &&  strstr(buffer,"device") )
+		{
+			return 1;
+		}
+		else
+		{
+			continue;
+		}
+		memset(buffer,0,sizeof(buffer));
+	//printf("name:%s,value:%s\n",name,value);
+	}
+	pclose(fp);
+	return 0;
+}
+static wait_device_online()
+{
+	int i;
+	for(i=0;i<20;i++)
+	{
+		if(is_device_online())
+			return ;
+		else
+			sleep(1);
+	}
+	proclog("device %s is not online ,quiting...\n",device_info.id);
+	exit(0);
+}
 main(int argc,char **argv)
 {
 	write_version("../disp/vai",version,strlen(version));
@@ -1155,7 +1237,8 @@ main(int argc,char **argv)
 	   printf("quit code can't install!");
 	   exit(0);
 	}
-
+	strcpy(device_info.id,argv[1]);
+	wait_device_online();
 	get_install_id();
 
 	struct sigaction signew;
@@ -1177,7 +1260,7 @@ main(int argc,char **argv)
 	ch_root_dir();
 
 	
-	strcpy(device_info.id,argv[1]);
+
 
 
 	debug=1;
@@ -1188,10 +1271,14 @@ main(int argc,char **argv)
 	debug=0;
 	get_device_info();
 	install_monitor();
-	start_monitor(monitor_apk_pkg_init);
+
 	sleep(1);
 	if(check_imei(device_info.imei))
 		pull_imei();
+
+	start_monitor(monitor_apk_pkg_init);
+
+	get_phone_id();
 
 	debug=1;
 	//get_device_info();
