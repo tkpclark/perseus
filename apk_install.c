@@ -20,6 +20,8 @@
 1.80 phone_id
 1.90 don't do anything until device is online
 1.91 manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
+1.92 fix debug of 1.91, misunderstanding..,do skip only when the pkg exists!
+1.93 remove the space before pkgname when comparing
 */
 
 //static const char *app_config="../config/app.config";
@@ -36,7 +38,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.91";
+static const char *version="1.93";
 
 
 	
@@ -669,12 +671,7 @@ static install_one_apk(char *apk,char *pkg)
 	alarm(60);
 
 
-	///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
-	if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, " com.taobao.taobao")))
-	{
-		proclog("manufacturer %s, pkg:%s, skip installing!\n", device_info.manufacturer, pkg);
-		return;
-	}
+
 
 	if(!apk_exist(apk))
 	{
@@ -698,6 +695,15 @@ install:
 	}
 	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
 	{
+
+		///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
+		if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
+		{
+			proclog("manufacturer %s, pkg:%s, skip!\n", device_info.manufacturer, pkg);
+			return;
+		}
+
+
 		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
 		proclog("%s\n",cmd);
 		system(cmd);
