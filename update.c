@@ -27,6 +27,9 @@ version
 2.11 modify get_local_ip
 2.12 don't do anything before get the rightime when the first start
 2.13 day.sys only be store for 3 days
+2.14 try more times when downloading failed
+	更改 "更新结束" 的显示位置
+2.15 no more clear "error display area"
 *****/
 
 
@@ -85,7 +88,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.13";
+static const char *version="2.15";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -159,6 +162,12 @@ static int ftp_download(const char *filename,const char *server_dir)
 	char gzfile[128];
 	sprintf(gzfile,"%s.tar.gz",filename);
 	char cmd[256];
+	int try_count=0;
+	char tmp[128];
+
+dl:
+	if(++try_count > 3)
+		return -1;
 	if(down_from==1)
 	{
 		FILE *fp;
@@ -193,6 +202,7 @@ static int ftp_download(const char *filename,const char *server_dir)
 	}
 	else
 	{
+		proclog("don't know where to download from,return\n");
 		return -1;
 	}
 
@@ -200,10 +210,13 @@ static int ftp_download(const char *filename,const char *server_dir)
 
 	
 
-	char tmp[128];
+
 	sprintf(tmp,"../tmp/%s",gzfile);
-	if(!is_file_exist(tmp))
-		return -1;
+	if( !is_file_exist(tmp) )
+	{
+		proclog("download %s failed ,try again...\n",gzfile);
+		goto dl;
+	}
 	sprintf(cmd,"tar zxvf ../tmp/%s -C ../tmp",gzfile);
 	proclog("%s\n",cmd);
 	system(cmd);
@@ -897,7 +910,7 @@ static upload_log_tcp()
 {
 
 	prt_screen(1, 0, 0,"正在准备上传日志(tcp)...\n"); 
-	prt_screen(2,0,0,"");
+	//prt_screen(2,0,0,"");
 	char cmd[256];
 	DIR * dp;
 	char upload_file[128];
@@ -1300,7 +1313,7 @@ main(int argc,char **argv)
 	debug=0;
 	update();
 	proclog("update finished!\n");
-	prt_screen(1, 1,0,"更新结束!\n");
+	prt_screen(2, 0,0,"更新结束!\n");
 
 
 	sleep(1);
