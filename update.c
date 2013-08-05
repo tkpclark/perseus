@@ -31,6 +31,7 @@ version
 	更改 "更新结束" 的显示位置
 2.15 no more clear "error display area"
 2.21 change_update_version
+2.30	runing flag
 *****/
 
 
@@ -89,7 +90,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.21";
+static const char *version="2.30";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -227,6 +228,20 @@ dl:
 
 
 
+}
+static create_running_file()
+{
+	char filename[]="../disp/update.run";
+	int fd = open(filename, O_CREAT|O_TRUNC|O_WRONLY,0600);
+	close(fd);
+}
+static set_finished_flag()
+{
+	char filename[]="../disp/update.run";
+	int fd=0;
+	fd=open(filename,O_RDWR);
+	write(fd,"1",1);
+	close(fd);
 }
 static check_crc(char *filename,char *official_crc)
 {
@@ -640,6 +655,8 @@ static void procquit(void)
 {
 	system("/sbin/hwclock -w");
 	proclog("quiting...\n");
+	set_finished_flag();
+	sleep(2);
 }
 
 static ntpupdate(int flag)
@@ -1321,7 +1338,7 @@ main(int argc,char **argv)
 
 
 
-
+	create_running_file();
 	
 
 	struct sigaction signew;
