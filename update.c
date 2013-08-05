@@ -30,6 +30,7 @@ version
 2.14 try more times when downloading failed
 	更改 "更新结束" 的显示位置
 2.15 no more clear "error display area"
+2.21 change_update_version
 *****/
 
 
@@ -88,7 +89,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.15";
+static const char *version="2.21";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -311,6 +312,56 @@ static is_new(int i)
 	}
 
 }
+static change_update_version()//if all files updated successfully,then change this version number
+{
+
+	char model_config_version[32]={0};
+	char model_config_version_file[]="../disp/model.config.version";
+	int fd1;
+	char model_config_file[]="../config/model.config";
+	fd1=open(model_config_file, 0);
+	if(fd1<0)
+	{
+		printf("failed to open %s,%s\n",model_config_file,strerror(errno));
+		return -1;
+	}
+	//proclog("%s:\n",config_file);
+	char buffer[des_len];
+	int n;
+
+	while(1)
+	{
+		memset(buffer,0,sizeof(buffer));
+		n=read(fd1,buffer,sizeof(buffer));
+		//printf("n:%d\n",n);
+		if(!n)
+			break;
+		T_DES(0,key,des_len,buffer,buffer);
+		proclog("buffer:%s\n",buffer);
+
+		if(!strncmp(buffer,"@version",8))
+		{
+			read(fd1,buffer,sizeof(buffer));
+			T_DES(0,key,des_len,buffer,buffer);
+			strcpy(model_config_version,buffer);
+			break;
+		}
+
+
+
+		//sleep(1);
+	}
+
+	close(fd1);
+
+
+	//change model_config's version
+	if(strlen(model_config_version)>2)
+		write_version(model_config_version_file, model_config_version, strlen(model_config_version));
+
+
+
+}
 static fetch_all_files()
 {
 	int i=0;
@@ -320,12 +371,36 @@ static fetch_all_files()
 	time_t tt;
 
 	int updated_num=0;
-
+	int will_update_num=0;
 	int fd;
-	prt_screen(1, 1, 0,"正在更新");
+
 	fd=open(prog_argu[debug].version_config_local, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600);
 
+
+
+	//count how many files need to be updated
+
+	i=0;
+	while(1)
+	{
+		if(!prog_argu[debug].file_info_server[i].filename[0])
+			break;
+		if(!strcmp(prog_argu[debug].file_info_server[i].version,"0"))
+		{
+			;
+		}
+		else if(is_new(i))
+		{
+			will_update_num++;
+		}
+		i++;
+	}
 	
+	prt_screen(1, 1, 0,"共有%d个文件需更新",will_update_num);
+	proclog("will update num: %d\n", will_update_num);
+	//begin to update
+	prt_screen(0, 1, 0,"正在更新");
+	i=0;
 	while(1)
 	{
 		if(!prog_argu[debug].file_info_server[i].filename[0])
@@ -383,7 +458,12 @@ static fetch_all_files()
 
 
 	
-	proclog("updated_num:%d\n",updated_num);
+	proclog("really updated num:%d\n",updated_num);
+
+	if(updated_num ==  will_update_num)//all files updated successfully
+	{
+		change_update_version();
+	}
 	sleep(2);
 	
 
@@ -1277,7 +1357,7 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 	
-	
+
 	//reset mac
 	reset_mac();
 
