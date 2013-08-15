@@ -22,6 +22,7 @@
 1.91 manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
 1.92 fix debug of 1.91, misunderstanding..,do skip only when the pkg exists!
 1.93 remove the space before pkgname when comparing
+1.94 modify position of wait_device_online()
 */
 
 //static const char *app_config="../config/app.config";
@@ -38,7 +39,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.93";
+static const char *version="1.94";
 
 
 	
@@ -1244,7 +1245,7 @@ main(int argc,char **argv)
 	   exit(0);
 	}
 	strcpy(device_info.id,argv[1]);
-	wait_device_online();
+
 	get_install_id();
 
 	struct sigaction signew;
@@ -1265,6 +1266,7 @@ main(int argc,char **argv)
 
 	ch_root_dir();
 
+	wait_device_online();
 	
 
 
