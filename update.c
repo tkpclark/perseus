@@ -32,6 +32,7 @@ version
 2.15 no more clear "error display area"
 2.21 change_update_version
 2.30	runing flag
+2.32 fix the bug of 2.10
 *****/
 
 
@@ -90,7 +91,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.30";
+static const char *version="2.32";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -291,6 +292,7 @@ download:
 	}
 	
 }
+/*
 static char* get_local_version(char *name,char *local_version)
 {
 	int i=0;
@@ -309,15 +311,33 @@ static char* get_local_version(char *name,char *local_version)
 		i++;
 	}
 }
+*/
+static char* get_local_crc(char *name,char *local_crc)
+{
+	int i=0;
+	while(1)
+	{
+		if(!prog_argu[debug].file_info_local[i].filename[0])
+		{
+			return NULL;
+		}
+		if(!strcmp(prog_argu[debug].file_info_local[i].filename,name))
+		{
+			strcpy(local_crc,prog_argu[debug].file_info_local[i].crc);
+			//return prog_argu[debug].file_info_local[i].version;
+			return local_crc;
+		}
+		i++;
+	}
+}
 static is_new(int i)
 {
-	char local_version[64];
-	memset(local_version,0,sizeof(local_version));
-	get_local_version(prog_argu[debug].file_info_server[i].filename,local_version);
-	//proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
-	if(strcmp(prog_argu[debug].file_info_server[i].version ,local_version))
+	char local_crc[64];
+	memset(local_crc,0,sizeof(local_crc));
+	get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc);
+	//proclog("localcrc:[%s]-servercrc:[%s]\n",local_crc,prog_argu[debug].file_info_server[i].crc);
+	if(strcmp(prog_argu[debug].file_info_server[i].crc ,local_crc))
 	{
-		proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
 		return 1;
 	}
 	else
@@ -352,7 +372,7 @@ static change_update_version()//if all files updated successfully,then change th
 		if(!n)
 			break;
 		T_DES(0,key,des_len,buffer,buffer);
-		proclog("buffer:%s\n",buffer);
+		//proclog("buffer:%s\n",buffer);
 
 		if(!strncmp(buffer,"@version",8))
 		{
@@ -412,7 +432,7 @@ static fetch_all_files()
 	}
 	
 	prt_screen(1, 1, 0,"共有%d个文件需更新",will_update_num);
-	proclog("will update num: %d\n", will_update_num);
+	proclog("excepting update num: %d\n", will_update_num);
 	//begin to update
 	prt_screen(0, 1, 0,"正在更新");
 	i=0;
@@ -449,7 +469,7 @@ static fetch_all_files()
 
 				updated_num++;
 				
-				proclog("updated:%s\n",buffer);
+				proclog("updated:%s",buffer);
 			}
 			else
 			{
@@ -477,6 +497,8 @@ static fetch_all_files()
 
 	if(updated_num ==  will_update_num)//all files updated successfully
 	{
+		if(updated_num)
+			proclog("all %d files updated successfully!, update model.config...\n",updated_num);
 		change_update_version();
 	}
 	sleep(2);
