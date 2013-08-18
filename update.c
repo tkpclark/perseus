@@ -33,6 +33,7 @@ version
 2.21 change_update_version
 2.30	runing flag
 2.32 fix the bug of 2.10
+2.33 no more generate new mac every time ,generate once and use it forever
 *****/
 
 
@@ -91,7 +92,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.32";
+static const char *version="2.33";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1225,32 +1226,52 @@ static reset_mac()
 {
 	
 	//generate a new mac address
-	
+	char *mac_file="../disp/mac";
 	char mac[128];
-	memset(mac, 0, sizeof(mac));
+	if(!is_file_exist(mac_file))
+	{
 
-	strcpy(mac, "08:90:00:");
+		memset(mac, 0, sizeof(mac));
 	
-	struct timeval tv;
-	gettimeofday(&tv,NULL);
-	char tmp[12];
-	memset(tmp,0,sizeof(tmp));
-	sprintf(tmp,"%06u",tv.tv_usec);
+		strcpy(mac, "08:90:00:");
 
-	char *p=tmp;
+		struct timeval tv;
+		gettimeofday(&tv,NULL);
+		char tmp[12];
+		memset(tmp,0,sizeof(tmp));
+		sprintf(tmp,"%06u",tv.tv_usec);
 	
-	strncat(mac,p,2);
-	p+=2;
-	strcat(mac,":");
-	
-	strncat(mac,p,2);
-	p+=2;
-	strcat(mac,":");
-	
-	strncat(mac,p,2);
-	
-	printf("new mac:%s\n", mac);
-	
+		char *p=tmp;
+
+		strncat(mac,p,2);
+		p+=2;
+		strcat(mac,":");
+
+		strncat(mac,p,2);
+		p+=2;
+		strcat(mac,":");
+
+		strncat(mac,p,2);
+
+		printf("new mac:%s\n", mac);
+
+
+
+		//write mac to disp file
+		int fd;
+		fd=open(mac_file, O_CREAT|O_TRUNC|O_WRONLY,0600);
+		write(fd,mac,strlen(mac));
+		close(fd);
+	}
+	else
+	{
+		int fd;
+		char buf[64];
+		fd=open(mac_file, 0);
+		read(fd,buf,sizeof(buf));
+		strcpy(mac,trim(buf));
+		close(fd);
+	}
 	//set mac
 	
 	char cmd[128];
@@ -1267,20 +1288,15 @@ static reset_mac()
 	printf("%s\n",cmd);
 	system(cmd);
 	
-	//write mac to disp file
-	int fd;
-	fd=open("../disp/mac", O_CREAT|O_TRUNC|O_WRONLY,0600);
-	write(fd,mac,strlen(mac));
-	close(fd);
-	
+
 	//restart dhcp
 	system("killall dhcpcd");
 	sleep(1);
 	system("dhcpcd -LK -d eth0");
 	
-	sleep(15);
+	//sleep(15);
 
-	get_local_ip();
+	//get_local_ip();
 
 
 }
