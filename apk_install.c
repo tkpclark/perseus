@@ -23,6 +23,7 @@
 1.92 fix debug of 1.91, misunderstanding..,do skip only when the pkg exists!
 1.93 remove the space before pkgname when comparing
 1.94 modify position of wait_device_online()
+1.95 modify started service
 */
 
 //static const char *app_config="../config/app.config";
@@ -39,7 +40,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.94";
+static const char *version="1.95";
 
 
 	
@@ -1140,16 +1141,27 @@ static void procquit(void)
 static start_service()
 {
 	char cmd[512];
+
+	/*
 	sprintf(cmd,"%s -s %s shell am startservice com.shellapp.ui/.ShellService",adb,device_info.id);
 	proclog("%s\n",cmd);
 	//adb shell am startservice com.shellapp.ui/.ShellService
 	system(cmd);
-
+	*/
 
 	sprintf(cmd,"%s -s %s shell am startservice com.shellservice/.ShellService",adb,device_info.id);
 	proclog("%s\n",cmd);
 	//adb shell am startservice com.shellapp.ui/.ShellService
 	system(cmd);
+
+	sprintf(cmd,"%s -s %s shell am startservice --user 0  com.shellservice/.ShellService",adb,device_info.id);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+
+
+
+
 
 	
 }
