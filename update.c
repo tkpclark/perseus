@@ -34,6 +34,7 @@ version
 2.30	runing flag
 2.32 fix the bug of 2.10
 2.33 no more generate new mac every time ,generate once and use it forever
+2.34 add local-server compare log
 *****/
 
 
@@ -92,7 +93,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.33";
+static const char *version="2.34";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -336,7 +337,7 @@ static is_new(int i)
 	char local_crc[64];
 	memset(local_crc,0,sizeof(local_crc));
 	get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc);
-	//proclog("localcrc:[%s]-servercrc:[%s]\n",local_crc,prog_argu[debug].file_info_server[i].crc);
+	proclog("file:%s  localcrc:[%s]-servercrc:[%s]\n",prog_argu[debug].file_info_server[i].filename,local_crc,prog_argu[debug].file_info_server[i].crc);
 	if(strcmp(prog_argu[debug].file_info_server[i].crc ,local_crc))
 	{
 		return 1;
