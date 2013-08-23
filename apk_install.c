@@ -24,6 +24,7 @@
 1.93 remove the space before pkgname when comparing
 1.94 modify position of wait_device_online()
 1.95 modify started service
+1.96 widen imei check, pull_imei first, write phoneid to the second line of push config
 */
 
 //static const char *app_config="../config/app.config";
@@ -40,7 +41,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.95";
+static const char *version="1.96";
 
 
 	
@@ -517,7 +518,7 @@ static push_config()
 	int fd;
 	fd=open(config_name, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600); 
 
-	//count
+	//write shortcut count to the first line
 	int i;
 	int shortcut_num=0;
 	for(i=0;i<prog_argu[debug].apk_num;i++)
@@ -531,8 +532,13 @@ static push_config()
 	sprintf(tmp,"%d",shortcut_num);
 	write(fd,tmp,strlen(tmp));
 	write(fd,enter,strlen(enter));
-
 	
+
+	//write phone_id(20bytes) to the second line
+	write(fd,device_info.phone_id,strlen(device_info.phone_id));
+	write(fd,enter,strlen(enter));
+
+	//write shortcut of packlist
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
 		if(prog_argu[debug].apks[i].shortcut)
@@ -864,20 +870,23 @@ static int check_imei(char *imei)
         int len=0;
         while(*p)
         {
-                if(!isdigit(*p))
+               if(!isdigit(*p) && !isalpha(*p))
                         return -1;
                 len++;
                 p++;
 
         }
+        if(len<3)
+        		return -1;
+        /*
         if(len!=15)
                 return -1;
-
+	*/
 	//proclog("SYS:imei:%s\n",imei);
         return 0;
 }
 
-static get_imei()
+static get_imei_by_dumpsys()
 {
 	FILE * fp;
 	char buffer[512];
@@ -1032,6 +1041,14 @@ static pull_imei()
 	//
 
 	
+}
+static get_imei()
+{
+	pull_imei();
+	if(check_imei(device_info.imei))
+		get_imei_by_dumpsys();
+	if(check_imei(device_info.imei))
+		proclog("get imei failed!");
 }
 static get_name(char *buffer,char *name)
 {
@@ -1289,12 +1306,13 @@ main(int argc,char **argv)
 	proclog("SYS:device installation started!\n");
 	
 	debug=0;
-	get_device_info();
+
 	install_monitor();
 
+	get_device_info();
+
 	sleep(1);
-	if(check_imei(device_info.imei))
-		pull_imei();
+
 
 	start_monitor(monitor_apk_pkg_init);
 
