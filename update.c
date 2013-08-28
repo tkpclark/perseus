@@ -36,6 +36,7 @@ version
 2.33 no more generate new mac every time ,generate once and use it forever
 2.34 add local-server compare log
 2.35 sleep 2 before if up
+2.36 udhcpc
 *****/
 
 
@@ -94,7 +95,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.35";
+static const char *version="2.36";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1296,7 +1297,8 @@ static reset_mac()
 	//restart dhcp
 	system("killall dhcpcd");
 	sleep(1);
-	system("dhcpcd -LK -d eth0");
+	//system("dhcpcd -LK -d eth0");
+	system("udhcpc");
 	
 	//sleep(15);
 
