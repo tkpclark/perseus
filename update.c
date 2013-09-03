@@ -37,6 +37,7 @@ version
 2.34 add local-server compare log
 2.35 sleep 2 before if up
 2.36 udhcpc
+2.37 dont chage crc if not download successfully
 *****/
 
 
@@ -95,7 +96,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.36";
+static const char *version="2.37";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -420,6 +421,8 @@ static fetch_all_files()
 	//count how many files need to be updated
 
 	i=0;
+
+	//notice!!! the "i" in file_info_server and in file_info_local are not the same !they have different sequnce!
 	while(1)
 	{
 		if(!prog_argu[debug].file_info_server[i].filename[0])
@@ -440,6 +443,9 @@ static fetch_all_files()
 	//begin to update
 	prt_screen(0, 1, 0,"正在更新");
 	i=0;
+
+	char local_crc[64];
+	memset(local_crc,0,sizeof(local_crc));
 	while(1)
 	{
 		if(!prog_argu[debug].file_info_server[i].filename[0])
@@ -478,14 +484,14 @@ static fetch_all_files()
 			else
 			{
 				proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
-				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
+				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
 			}
 			
 			
 		}
 		else//dont need update
 		{
-			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,prog_argu[debug].file_info_server[i].crc);
+			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
 		}
 
 		T_DES(1,key,des_len,buffer,buffer);
