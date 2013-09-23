@@ -38,6 +38,12 @@ version
 2.35 sleep 2 before if up
 2.36 udhcpc
 2.37 dont chage crc if not download successfully
+2.38 delete file immediatly after you finshed using it when download file
+	delete log before 21 days ===> 15 days before
+2.39 set alarm before udhcpc(not working)
+2.40 cancal generate box_id(manually set)
+	set version.config in version_config_name
+	fix bug of 2.39
 *****/
 
 
@@ -96,7 +102,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.37";
+static const char *version="2.40";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -475,6 +481,11 @@ static fetch_all_files()
 				sprintf(cmd,"cp ../tmp/%s ../%s",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].local_dir);
 				//proclog("%s\n",cmd);
 				system(cmd);
+
+				//delete
+				sprintf(cmd,"rm -f ../tmp/%s",prog_argu[debug].file_info_server[i].filename);
+				system(cmd);
+
 				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].version,prog_argu[debug].file_info_server[i].crc);
 
 				updated_num++;
@@ -636,7 +647,22 @@ static get_file_info(const char *config_file,FILE_INFO file_info[])// infomation
 	close(fd1);
 	
 }
-
+static char *get_name_of_version_config(char *version_config_file_name)
+{
+	int fd;
+	char buffer[128];
+	memset(buffer,0,sizeof(buffer));
+	fd=open("../config/version_config_name",0);
+	if(fd<0)
+	{
+		proclog("failed to obtain the name of version_config\n");
+		return NULL;
+	}
+	read(fd,buffer,sizeof(buffer));
+	strcpy(version_config_file_name,trim(buffer));
+	close(fd);
+	return version_config_file_name;
+}
 static download_config()
 {
 	int fd;
@@ -644,40 +670,29 @@ static download_config()
 	get_box_id(box_id);
 	char filename[128];
 	char cmd[128];
+	int try_count=0;
 
-
-	prt_screen(1, 1,0,"正在获取配置文件...\n");
-
-
-	//download version.config.boxid
-	sprintf(filename,"version.config.%s",box_id);
-	ftp_download(filename,"config/");
+	//get name of version.config
+	if(!get_name_of_version_config(filename))
+		return -1;
 
 	char _filename[128];
 	sprintf(_filename,"../tmp/%s",filename);
-	fd=open(_filename,0);
-	if(fd >0)
-	{
-		close(fd);
 
-		sprintf(cmd,"mv %s ../tmp/version.config",_filename);
-		proclog("%s\n",cmd);
-		system(cmd);
-		return 0;
-	}
+	prt_screen(1, 1,0,"正在获取配置文件...\n");
 
-	//download version.config(default)
-	strcpy(filename,"version.config");
-	ftp_download(filename,"config/");
-	sprintf(_filename,"../tmp/%s",filename);
-	fd=open(_filename,0);
-	if(fd<0)
+download_config:
+	if(try_count++>3)
 	{
-		char str[128];
 		proclog("failed to download %s!\n",filename);
 		prt_screen(2, 0,0,"下载配置文件失败!\n");
 		return -1;
-		
+	}
+	ftp_download(filename,"config/");
+
+	if(is_file_exist(_filename)==0)
+	{
+		goto download_config;
 	}
 	return 0;
 
@@ -1304,8 +1319,9 @@ static reset_mac()
 	system("killall dhcpcd");
 	sleep(1);
 	//system("dhcpcd -LK -d eth0");
-	system("udhcpc");
 	
+	system("udhcpc -n");
+
 	//sleep(15);
 
 	//get_local_ip();
@@ -1322,7 +1338,7 @@ static delete_old_logs()
 	system(cmd);
 	
 	debug=1;
-	sprintf(cmd,"rm `find %s -mtime +21`",prog_argu[debug].logbak_dir);
+	sprintf(cmd,"rm `find %s -mtime +15`",prog_argu[debug].logbak_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 	
@@ -1333,7 +1349,7 @@ static delete_old_logs()
 
 
 	debug=0;
-	sprintf(cmd,"rm `find %s -mtime +21`",prog_argu[debug].logbak_dir);
+	sprintf(cmd,"rm `find %s -mtime +15`",prog_argu[debug].logbak_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 	
@@ -1364,7 +1380,7 @@ static copy_day_logs()
 	}
 	else
 	{
-		proclog("sdcard doesn't exist, skip copying day log!");
+		proclog("sdcard doesn't exist, skip copying day log!\n");
 	}
 
 }
@@ -1429,18 +1445,8 @@ main(int argc,char **argv)
 	reset_mac();
 
 	
-	
-	//when box_id doesn't exist, time update is necessary,other wise don't do anything
-	if(is_file_exist("../disp/box_id"))
-	{
-		ntpupdate(2);
-	}
-	else
-	{
-		ntpupdate(1);
-		set_box_id();
-	}
-	
+	ntpupdate(2);
+
 
 	//delete old files
 	delete_old_logs();
