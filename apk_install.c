@@ -25,6 +25,9 @@
 1.94 modify position of wait_device_online()
 1.95 modify started service
 1.96 widen imei check, pull_imei first, write phoneid to the second line of push config
+1.97 start_all_activity
+1.98 adb=>./adb
+1.99 ./adb => ./adb -s
 */
 
 //static const char *app_config="../config/app.config";
@@ -41,7 +44,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.96";
+static const char *version="1.99";
 
 
 	
@@ -523,7 +526,7 @@ static push_config()
 	int shortcut_num=0;
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
-		if(prog_argu[debug].apks[i].shortcut)
+		if(prog_argu[debug].apks[i].shortcut==1)
 		{
 			shortcut_num++;
 		}
@@ -836,9 +839,27 @@ static install_all()
 	char apk_name[128];
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
+		if(prog_argu[debug].apks[i].shortcut==2)//
+			continue;
 		//apk_name was value when read_config,if there's no the third column in config file,it'd valued with apk append pkgname
 		sprintf(apk_name,"%s/%s",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].apk_name);
 		install_one_apk(apk_name,prog_argu[debug].apks[i].pkg_name);
+	}
+	//printscreen("all done, bye!\n");
+}
+static start_all_activity()
+{
+	int i;
+	char cmd[512];
+	for(i=0;i<prog_argu[debug].apk_num;i++)
+	{
+		if(prog_argu[debug].apks[i].shortcut==2)//
+		{
+			sprintf(cmd,"%s -s %s shell am start %s",adb,device_info.id,prog_argu[debug].apks[i].apk_name);
+			proclog("%s\n",cmd);
+			system(cmd);
+		}
+
 	}
 	//printscreen("all done, bye!\n");
 }
@@ -1328,7 +1349,7 @@ main(int argc,char **argv)
 	push_config();
 	start_monitor(monitor_apk_pkg_setup);
 	install_all();
-
+	start_all_activity();
 
 	start_monitor(monitor_apk_pkg_end);
 	start_service();
