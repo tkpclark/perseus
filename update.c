@@ -44,6 +44,7 @@ version
 2.40 cancal generate box_id(manually set)
 	set version.config in version_config_name
 	fix bug of 2.39
+2.41 fix bug when load server version config info
 *****/
 
 
@@ -102,7 +103,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.40";
+static const char *version="2.41";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -232,6 +233,10 @@ dl:
 		goto dl;
 	}
 	sprintf(cmd,"tar zxvf ../tmp/%s -C ../tmp",gzfile);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+	sprintf(cmd,"rm  ../tmp/%s",gzfile);
 	proclog("%s\n",cmd);
 	system(cmd);
 
@@ -794,8 +799,19 @@ update()
 	sleep(5);
 	//memset(prog_argu[debug].file_info_local,0,sizeof(FILE_INFO)*UPD_LST_MAX_NUM);
 	//memset(prog_argu[debug].file_info_server,0,sizeof(FILE_INFO)*UPD_LST_MAX_NUM);
+
+	//
 	get_file_info(prog_argu[debug].version_config_local,prog_argu[debug].file_info_local);
-	get_file_info("../tmp/version.config",prog_argu[debug].file_info_server);
+
+	//
+	char version_config[128];
+	memset(version_config,0,sizeof(version_config));
+	get_name_of_version_config(version_config);
+	char download_version_config[128];
+	memset(download_version_config,0,sizeof(download_version_config));
+	sprintf(download_version_config,"../tmp/%s",version_config);
+	get_file_info(download_version_config,prog_argu[debug].file_info_server);
+
 
 	fetch_all_files();
 
