@@ -28,6 +28,8 @@
 1.97 start_all_activity
 1.98 adb=>./adb
 1.99 ./adb => ./adb -s
+2.00 nano_sleep between starting activities
+2.01 adjust the sequenece of start_monitor() and get_device_info()
 */
 
 //static const char *app_config="../config/app.config";
@@ -44,7 +46,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="1.99";
+static const char *version="2.01";
 
 
 	
@@ -858,6 +860,7 @@ static start_all_activity()
 			sprintf(cmd,"%s -s %s shell am start %s",adb,device_info.id,prog_argu[debug].apks[i].apk_name);
 			proclog("%s\n",cmd);
 			system(cmd);
+			my_nano_sleep(300000000);
 		}
 
 	}
@@ -1330,12 +1333,13 @@ main(int argc,char **argv)
 
 	install_monitor();
 
+	start_monitor(monitor_apk_pkg_init);
+
 	get_device_info();
 
 	sleep(1);
 
 
-	start_monitor(monitor_apk_pkg_init);
 
 	get_phone_id();
 

@@ -365,7 +365,18 @@ write_version(char *filename,char *version,int len)
 	int fd;
 	fd=open(filename, O_CREAT|O_TRUNC|O_WRONLY,0600);
 	if(fd<0)
+	{
+		//proclog("failed to open %s,%s\n",filename,strerror(errno));
 		return;
-	write(fd,version,strlen(version));
+	}
+	write(fd,version,len);
 	close(fd);
+}
+
+void my_nano_sleep(unsigned long nsec)
+{
+	struct timespec slptm;
+	slptm.tv_sec = nsec/1000000000;
+	slptm.tv_nsec = nsec%1000000000;
+	nanosleep(&slptm, NULL);
 }

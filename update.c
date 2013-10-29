@@ -45,6 +45,9 @@ version
 	set version.config in version_config_name
 	fix bug of 2.39
 2.41 fix bug when load server version config info
+2.42 print log of model_config's version
+	give default version_config file name when failed to get it
+2.43 fix the bug of local_version being empty
 *****/
 
 
@@ -86,6 +89,8 @@ typedef struct
 	char logbak_dir[128];
 	char app_config[128];
 	char version_config_local[128];
+	char model_config_version_file[128];
+	char model_config_file[128];
 	FILE_INFO file_info_local[UPD_LST_MAX_NUM];
 	FILE_INFO file_info_server[UPD_LST_MAX_NUM];
 	SERVER_INFO server_info;
@@ -103,7 +108,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.41";
+static const char *version="2.43";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -367,13 +372,12 @@ static change_update_version()//if all files updated successfully,then change th
 {
 
 	char model_config_version[32]={0};
-	char model_config_version_file[]="../disp/model.config.version";
+
 	int fd1;
-	char model_config_file[]="../config/model.config";
-	fd1=open(model_config_file, 0);
+	fd1=open(prog_argu[debug].model_config_file, 0);
 	if(fd1<0)
 	{
-		printf("failed to open %s,%s\n",model_config_file,strerror(errno));
+		printf("failed to open %s,%s\n",prog_argu[debug].model_config_file,strerror(errno));
 		return -1;
 	}
 	//proclog("%s:\n",config_file);
@@ -395,6 +399,7 @@ static change_update_version()//if all files updated successfully,then change th
 			read(fd1,buffer,sizeof(buffer));
 			T_DES(0,key,des_len,buffer,buffer);
 			strcpy(model_config_version,buffer);
+			proclog("###model_config_version:%s\n",model_config_version);
 			break;
 		}
 
@@ -408,11 +413,40 @@ static change_update_version()//if all files updated successfully,then change th
 
 	//change model_config's version
 	if(strlen(model_config_version)>2)
-		write_version(model_config_version_file, model_config_version, strlen(model_config_version));
+	{
+		int fd2;
+		fd2=open(prog_argu[debug].model_config_version_file,O_CREAT|O_TRUNC|O_WRONLY,0600);
+		if(fd2<0)
+		{
+			proclog("failed to write %s,%s",prog_argu[debug].model_config_version_file,strerror(errno));
+			return;
+		}
+		int n=write(fd2,model_config_version,strlen(model_config_version));
+		//proclog("wrote %d bytes to file %s!\n",n,prog_argu[debug].model_config_version_file);
+		close(fd2);
+	}
 
 
 
 }
+
+static print_model_config_version()
+{
+	int fd;
+	char model_config_version[128];
+	memset(model_config_version,0,sizeof(model_config_version));
+	fd=open(prog_argu[debug].model_config_version_file, O_CREAT|O_RDONLY,0600);
+	if(fd<0)
+	{
+		proclog("failed to read %s, %s\n",prog_argu[debug].model_config_version_file,strerror(errno));
+		return;
+	}
+	read(fd,model_config_version,sizeof(model_config_version));
+	close(fd);
+	proclog("model_config version:%s\n", model_config_version);
+
+}
+
 static fetch_all_files()
 {
 	int i=0;
@@ -491,7 +525,7 @@ static fetch_all_files()
 				sprintf(cmd,"rm -f ../tmp/%s",prog_argu[debug].file_info_server[i].filename);
 				system(cmd);
 
-				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].version,prog_argu[debug].file_info_server[i].crc);
+				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,0,prog_argu[debug].file_info_server[i].crc);
 
 				updated_num++;
 				
@@ -500,14 +534,14 @@ static fetch_all_files()
 			else
 			{
 				proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
-				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
+				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
 			}
 			
 			
 		}
 		else//dont need update
 		{
-			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_local[i].version,get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
+			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
 		}
 
 		T_DES(1,key,des_len,buffer,buffer);
@@ -521,12 +555,12 @@ static fetch_all_files()
 	
 	proclog("really updated num:%d\n",updated_num);
 
-	if(updated_num ==  will_update_num)//all files updated successfully
+	if( (updated_num ==  will_update_num) && (updated_num) )//all files updated successfully
 	{
-		if(updated_num)
-			proclog("all %d files updated successfully!, update model.config...\n",updated_num);
+		proclog("all %d files updated successfully!, update model.config...\n",updated_num);
 		change_update_version();
 	}
+	print_model_config_version();
 	sleep(2);
 	
 
@@ -661,11 +695,17 @@ static char *get_name_of_version_config(char *version_config_file_name)
 	if(fd<0)
 	{
 		proclog("failed to obtain the name of version_config\n");
-		return NULL;
+		strcpy(version_config_file_name,"version.config");
+		return version_config_file_name;
 	}
 	read(fd,buffer,sizeof(buffer));
-	strcpy(version_config_file_name,trim(buffer));
 	close(fd);
+
+	if(strlen(buffer)>1)
+		strcpy(version_config_file_name,trim(buffer));
+	else
+		strcpy(version_config_file_name,"version.config");
+
 	return version_config_file_name;
 }
 static download_config()
@@ -1442,6 +1482,8 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].log_dir,"../.log");
 	strcpy(prog_argu[debug].logbak_dir,"../.logbak");
 	strcpy(prog_argu[debug].version_config_local,"../.config/version.config");
+	strcpy(prog_argu[debug].model_config_version_file,"../.disp/model.config.version");
+	strcpy(prog_argu[debug].model_config_file,"../.config/model.config");
 
 	debug=0;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1451,6 +1493,8 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].logbak_dir,"../logbak");
 	strcpy(prog_argu[debug].version_config_local,"../config/version.config");
+	strcpy(prog_argu[debug].model_config_version_file,"../disp/model.config.version");
+	strcpy(prog_argu[debug].model_config_file,"../config/model.config");
 	
 	ch_root_dir();
 
@@ -1474,9 +1518,9 @@ main(int argc,char **argv)
 
 	
 	//debug
-	debug=1;
-	update();
-	proclog("update finished!\n");
+	//debug=1;
+	//update();
+	//proclog("update finished!\n");
 
 	//normal
 	debug=0;
