@@ -30,6 +30,10 @@
 1.99 ./adb => ./adb -s
 2.00 nano_sleep between starting activities
 2.01 adjust the sequenece of start_monitor() and get_device_info()
+2.02 modify the format of record(record_app and record_phone)
+	add crc to record file(new crc algorithm)
+	remove the first line of inception.config( old first line is shortcut number)
+
 */
 
 //static const char *app_config="../config/app.config";
@@ -46,7 +50,8 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="2.01";
+static const char *version="2.02";
+static time_t phone_install_start_time,phone_install_finish_time;
 
 
 	
@@ -217,71 +222,148 @@ static void proclog(const char *fmt,...)
 	
 }
 
-static void record(char *apkname,char *result)
+static void write_to_record_file(char *buf)
 {
-	char ts[32];
-	char buf[des_len];
-	time_t tt;
-	struct timeval tv;
-        
-
-//get log time
-	tt=time(0);
-	memset(buf,0,sizeof(buf));
-	strftime(ts,30,"%F %X",(const struct tm *)localtime(&tt));
-
-	char ts_nano[64];
-	gettimeofday (&tv, NULL);
-	sprintf(ts_nano,"%s.%06d",ts, tv.tv_usec);
-	
-
-	int fd;
-
-
-
-	sprintf(buf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",ts_nano,device_info.phone_id,device_info.manufacturer,device_info.model,device_info.os_version,apkname,result);
-	T_DES(1,key,des_len,buf,buf);
-
 	//get box_id
-	char filename[128];
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
 	get_box_id(box_id);
 
 
+	int fd;
+	time_t tt;
+	char ts[32];
+	char filename[128];
+
+
 	//hour log
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
 	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,box_id);
-
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);         
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
 	if(fd <0)
 	{
 		//printscreen("open %s failed!%s\n",filename,strerror(errno));
 		return;
 	}
-	
-	flock(fd,LOCK_EX);	
-	write(fd,buf,sizeof(buf));
+	flock(fd,LOCK_EX);
+	write(fd,buf,des_len);
 	flock(fd,LOCK_UN);
 	close(fd);
-
-
 
 	//day log
 	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
 	sprintf(filename,"%s/%s_%s.day.record",prog_argu[debug].log_dir,ts,box_id);
-	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
+	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
 	if(fd <0)
 	{
 		printf("open %s failed!%s\n",filename,strerror(errno));
 		return;
 	}
-	flock(fd,LOCK_EX);	
-	write(fd,buf,sizeof(buf));
+	flock(fd,LOCK_EX);
+	write(fd,buf,des_len);
 	flock(fd,LOCK_UN);
 	close(fd);
 }
+/*
 
+标准格式：日志类型 \t 日志正文
+
+其中“日志类型”目前包含两种：0 应用安装日志； 1 手机安装日志
+
+如果是应用安装日志（0），则记录：
+
+安装开始时间 \t 安装结束时间 \t 内部流水号 \t 应用文件名 \t CRC校验码 \t 安装结果及报告 （共7个字段）
+
+如果是手机安装日志 （1），则记录：
+
+安装开始时间 \t 安装结束时间 \t 内部流水号 \t IMEI \t 厂家 \t 型号 \t 操作系统版本号 \t 配置文件版本号 \t 安装序列号 （共9个字段）
+*/
+
+static void get_model_config_version(char *model_config_version)
+{
+	char *filename="../disp/model.config.version";
+	int fd;
+	fd=open(filename,0);
+	if(fd<0)
+	{
+		strcpy(model_config_version,"NONE");
+		return;
+	}
+
+	char buf[32];
+	memset(buf,0,sizeof(buf));
+	read(fd,buf,20);
+	strcpy(model_config_version, trim(buf));
+	close(fd);
+
+
+
+}
+
+static void record_app(time_t app_install_start_time, time_t app_install_finish_time,char *apkname,char *result)
+{
+
+
+	//
+	char crc_value[32];
+	sprintf(crc_value,"%X",get_file_crc_general(apkname));
+
+	//
+	char start_time[32];
+	strftime(start_time,30,"%F %X",(const struct tm *)localtime(&app_install_start_time));
+
+
+	char buf[des_len];
+	sprintf(buf, "%s\t%d\t%s\t%s\t%s\t%s\n",
+			start_time,
+			app_install_finish_time-app_install_start_time,
+			install_id,
+			apkname,
+			crc_value,
+			result
+			);
+	//proclog("record_app:%s\n", buf);
+	T_DES(1,key,des_len,buf,buf);
+
+	write_to_record_file(buf);
+
+
+}
+static void record_phone()
+{
+	/*
+	 * 安装开始时间 \t 安装结束时间 \t 内部流水号 \t IMEI \t 厂家 \t 型号 \t 操作系统版本号 \t 配置文件版本号 \t 安装序列号
+	 */
+	//
+	char start_time[32];
+	strftime(start_time,30,"%F %X",(const struct tm *)localtime(&phone_install_start_time));
+
+	//get model_config_version
+	char model_config_version[32];
+	get_model_config_version(model_config_version);
+
+
+	//sprintf(buf, "%s\t%s\t%s\t%s\t %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", 	install_start_time, install_finish_time，install_id,device_info.imei, 			device_info.manufacturer,device_info.model,device_info.os_version,			model_config_version, apkname, crc_value, install_seq,result);
+	char buf[des_len];
+	sprintf(buf, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+			start_time,
+			phone_install_finish_time-phone_install_start_time,
+			install_id,
+			device_info.imei,
+			device_info.manufacturer,
+			device_info.model,
+			device_info.os_version,
+			model_config_version,
+			install_seq
+			);
+	//proclog("record_phone:%s\n", buf);
+	T_DES(1,key,des_len,buf,buf);
+
+
+	write_to_record_file(buf);
+
+
+}
 
 /*
 static get_config_apks()
@@ -515,6 +597,7 @@ get_config_apks_encrypt_end:
 
 static push_config()
 {
+	int i;
 	//generate config
 	char config_name[128];
 	char tmp[128];
@@ -524,7 +607,9 @@ static push_config()
 	fd=open(config_name, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600); 
 
 	//write shortcut count to the first line
-	int i;
+
+	/*2.02版本更改，取消写入shortcut_num到inception.config文件
+
 	int shortcut_num=0;
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
@@ -537,10 +622,10 @@ static push_config()
 	sprintf(tmp,"%d",shortcut_num);
 	write(fd,tmp,strlen(tmp));
 	write(fd,enter,strlen(enter));
-	
+	*/
 
 	//write phone_id(20bytes) to the second line
-	write(fd,device_info.phone_id,strlen(device_info.phone_id));
+	write(fd,install_id,strlen(install_id));
 	write(fd,enter,strlen(enter));
 
 	//write shortcut of packlist
@@ -670,6 +755,16 @@ static apk_exist(char *apk)
 	}	
 	
 }
+static void tab2space(char *str)
+{
+        char *p=str;
+        while(*p)
+        {
+                if(*p=='\t')
+                        *p=' ';
+                p++;
+        }
+}
 static install_one_apk(char *apk,char *pkg)
 {
 	FILE *fp;
@@ -679,6 +774,8 @@ static install_one_apk(char *apk,char *pkg)
 	char cmd[512];
 	int try_count=0;
 	
+	time_t app_install_start_time,app_install_finish_time;
+
 
 	//printscreen("%s start installing...\n",apk);
 	alarm(60);
@@ -693,6 +790,7 @@ static install_one_apk(char *apk,char *pkg)
 		return;
 	}
 
+	app_install_start_time=time(0);
 install:
 	if(++try_count >=3)
 		goto install_end;
@@ -749,7 +847,7 @@ install:
 		}
 	}
 
-	
+
 	if(strstr(buffer,"Success"))
 	{
 		//printscreen("%s %s",apk,buffer);
@@ -779,9 +877,11 @@ install:
 	}
 
 install_end:
+	app_install_finish_time = time(0);
 	strcpy(result,trim(buffer));
+	tab2space(result);
 	if(!strstr(apk,monitor_apk))
-		record(apk,result);
+		record_app(app_install_start_time,app_install_finish_time,apk,result);
 	return;
 	
 }
@@ -839,6 +939,9 @@ static install_all()
 {
 	int i;
 	char apk_name[128];
+
+
+	phone_install_start_time = time(0);
 	for(i=0;i<prog_argu[debug].apk_num;i++)
 	{
 		if(prog_argu[debug].apks[i].shortcut==2)//
@@ -847,6 +950,8 @@ static install_all()
 		sprintf(apk_name,"%s/%s",prog_argu[debug].apk_dir,prog_argu[debug].apks[i].apk_name);
 		install_one_apk(apk_name,prog_argu[debug].apks[i].pkg_name);
 	}
+	phone_install_finish_time =  time(0);
+
 	//printscreen("all done, bye!\n");
 }
 static start_all_activity()
@@ -1072,7 +1177,10 @@ static get_imei()
 	if(check_imei(device_info.imei))
 		get_imei_by_dumpsys();
 	if(check_imei(device_info.imei))
+	{
+		strcpy(device_info.imei,"NONE");
 		proclog("get imei failed!");
+	}
 }
 static get_name(char *buffer,char *name)
 {
@@ -1210,7 +1318,7 @@ static get_install_id()
 {
         struct timeval tv;
         gettimeofday (&tv, NULL);
-        sprintf(install_id,"%d%06d",tv.tv_sec , tv.tv_usec );
+        sprintf(install_id,"P%d%06d",tv.tv_sec , tv.tv_usec );
 }
 static get_phone_id()
 {
@@ -1302,13 +1410,6 @@ main(int argc,char **argv)
 	get_install_id();
 
 	struct sigaction signew;
-	
-	debug=1;
-	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
-	strcpy(prog_argu[debug].apk_dir,"../.apk");
-	strcpy(prog_argu[debug].config_dir,"../.config");
-	strcpy(prog_argu[debug].log_dir,"../.log");
-	strcpy(prog_argu[debug].model_config,"../.config/model.config");
 
 	debug=0;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1320,51 +1421,30 @@ main(int argc,char **argv)
 	ch_root_dir();
 
 	wait_device_online();
-	
-
-
-
-	debug=1;
-	proclog("SYS:device installation started!\n");
 	debug=0;
 	proclog("SYS:device installation started!\n");
 	
-	debug=0;
+
 
 	install_monitor();
-
 	start_monitor(monitor_apk_pkg_init);
-
 	get_device_info();
-
 	sleep(1);
-
-
-
-	get_phone_id();
-
-	debug=1;
-	//get_device_info();
-	get_config_apks_encrypt();
-	install_all();
-	
-	debug=0;	
+	//get_phone_id();
 	get_config_apks_encrypt();
 	push_config();
 	start_monitor(monitor_apk_pkg_setup);
 	install_all();
 	start_all_activity();
-
 	start_monitor(monitor_apk_pkg_end);
 	start_service();
 	count_seq();
+	record_phone();
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
 
-	
-	debug=1;
-	proclog("SYS:device installation finished!\n");
-	debug=0;
+
+
 	proclog("SYS:device installation finished!\n");
 	
 }

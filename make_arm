@@ -1,4 +1,4 @@
-arm-linux-gcc apk_install.c Threedes.c lib.c encrypt_file_line.c -g -o apk_install
+arm-linux-gcc apk_install.c Threedes.c lib.c encrypt_file_line.c general_crc.c -g -o apk_install
 arm-linux-gcc update.c Threedes.c CRC.c lib.c encrypt_file_line.c -g -o update
 arm-linux-gcc upload.c Threedes.c lib.c encrypt_file_line.c -o upload
 arm-linux-gcc encrypt.c encrypt_file_line.c Threedes.c lib.c -g -o encrypt
