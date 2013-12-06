@@ -356,6 +356,15 @@ int is_file_exist(char *filename)
 		return 1;
 	}
 }
+int is_dir(char *file)
+{
+        struct stat st;
+        stat(file,&st);
+        if (S_ISDIR(st.st_mode))
+                return 1;
+        else
+                return 0;
+}
 int sdcard_exists()
 {
 	return is_file_exist("/dev/sdcard");

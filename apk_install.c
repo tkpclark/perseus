@@ -33,6 +33,8 @@
 2.02 modify the format of record(record_app and record_phone)
 	add crc to record file(new crc algorithm)
 	remove the first line of inception.config( old first line is shortcut number)
+2.03 fix following bugs in version 2.02
+2.04 @field in model.config !strcmp==>strstr
 
 */
 
@@ -50,7 +52,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="2.02";
+static const char *version="2.04";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -235,6 +237,7 @@ static void write_to_record_file(char *buf)
 	char ts[32];
 	char filename[128];
 
+	tt=time(0);
 
 	//hour log
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
@@ -314,7 +317,7 @@ static void record_app(time_t app_install_start_time, time_t app_install_finish_
 
 
 	char buf[des_len];
-	sprintf(buf, "%s\t%d\t%s\t%s\t%s\t%s\n",
+	sprintf(buf, "0\t%s\t%d\t%s\t%s\t%s\t%s\n",
 			start_time,
 			app_install_finish_time-app_install_start_time,
 			install_id,
@@ -345,7 +348,7 @@ static void record_phone()
 
 	//sprintf(buf, "%s\t%s\t%s\t%s\t %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", 	install_start_time, install_finish_time£¬install_id,device_info.imei, 			device_info.manufacturer,device_info.model,device_info.os_version,			model_config_version, apkname, crc_value, install_seq,result);
 	char buf[des_len];
-	sprintf(buf, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+	sprintf(buf, "1\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 			start_time,
 			phone_install_finish_time-phone_install_start_time,
 			install_id,
@@ -525,7 +528,7 @@ static get_config_apks_encrypt()
 		{
 			strcpy(model,trim(buffer+1));
 			
-			if(!strcmp(model,"default") || !strcmp(model,device_info.model))
+			if(!strcmp(model,"default") || strstr(model,device_info.model))
 			{
 				//strcpy(device_info.model,model);
 				break;

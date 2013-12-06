@@ -48,6 +48,8 @@ version
 2.42 print log of model_config's version
 	give default version_config file name when failed to get it
 2.43 fix the bug of local_version being empty
+2.44 two ways to check crc
+	no more use local version config
 *****/
 
 
@@ -108,7 +110,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.43";
+static const char *version="2.44";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -269,16 +271,13 @@ static check_crc(char *filename,char *official_crc)
 {
 	//check whether download completely
 	
-	int filesize;
-	char *buffer;
 	char crc_value[32];
-	int fd;
 
 	char _filename[128];
 	sprintf(_filename,"../tmp/%s",filename);
-	sprintf(crc_value,"%X",get_file_crc(_filename));
+	sprintf(crc_value,"%X %X",get_file_crc(_filename),get_file_crc_general(filename));
 	
-	if(!strcmp(crc_value,official_crc))
+	if(strstr(crc_value,official_crc))
 	{
 		proclog("%s download successfully!\n",filename);
 		return 0;
@@ -335,39 +334,44 @@ static char* get_local_version(char *name,char *local_version)
 */
 static char* get_local_crc(char *name,char *local_crc)
 {
-	int i=0;
-	while(1)
-	{
-		if(!prog_argu[debug].file_info_local[i].filename[0])
-		{
-			return NULL;
-		}
-		if(!strcmp(prog_argu[debug].file_info_local[i].filename,name))
-		{
-			strcpy(local_crc,prog_argu[debug].file_info_local[i].crc);
-			//return prog_argu[debug].file_info_local[i].version;
-			return local_crc;
-		}
-		i++;
-	}
+
+	//there will be two crc values put into the local_crc after calculating, one is the old version of crc, the other is new version
+	//in the future,as long as any one matched ,I take it as ok!
+	if(!is_file_exist(name))
+		return NULL;
+	if(is_dir(name))
+		return NULL;
+	sprintf(local_crc,"%X %X",get_file_crc(name),get_file_crc_general(name));
+	return local_crc;
 }
 static is_new(int i)
 {
 	char local_crc[64];
 	memset(local_crc,0,sizeof(local_crc));
-	get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc);
+
+	char destfile[128];
+	sprintf(destfile,"../%s/%s",prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].filename);
+	get_local_crc(destfile,local_crc);
 	proclog("file:%s  localcrc:[%s]-servercrc:[%s]\n",prog_argu[debug].file_info_server[i].filename,local_crc,prog_argu[debug].file_info_server[i].crc);
-	if(strcmp(prog_argu[debug].file_info_server[i].crc ,local_crc))
+	if(strstr(local_crc, prog_argu[debug].file_info_server[i].crc))
 	{
-		return 1;
+		return 0;
 	}
 	else
 	{
 		//proclog("local:%s-server:%s\n",local_version,prog_argu[debug].file_info_server[i].version);
-		return 0;
+		return 1;
 	}
 
 }
+/*
+ * 关于model_config的version：
+ *
+ * 在model.config文件中有个字段：@version ，代表了该model.config文件的版本号
+ * 在disp文件夹下有一个model.config.version文件，里面记录了model.config文件的版本号，用于ui进行显示。
+ * 注意，只有在update成功更新了所有的下载文件后
+ * 才会将model.config.version文件中的内容更新，以代表已经盒子已经成功“更新”到某一版本了，ui上会显示这个版本号，服务端统计时也会用
+ */
 static change_update_version()//if all files updated successfully,then change this version number
 {
 
@@ -457,10 +461,6 @@ static fetch_all_files()
 
 	int updated_num=0;
 	int will_update_num=0;
-	int fd;
-
-	fd=open(prog_argu[debug].version_config_local, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600);
-
 
 
 	//count how many files need to be updated
@@ -534,22 +534,15 @@ static fetch_all_files()
 			else
 			{
 				proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
-				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
+				//sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
 			}
 			
 			
 		}
-		else//dont need update
-		{
-			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
-		}
 
-		T_DES(1,key,des_len,buffer,buffer);
-		write(fd,buffer,sizeof(buffer));
 		i++;
 		
 	}
-	close(fd);
 
 
 	
@@ -841,7 +834,7 @@ update()
 	//memset(prog_argu[debug].file_info_server,0,sizeof(FILE_INFO)*UPD_LST_MAX_NUM);
 
 	//
-	get_file_info(prog_argu[debug].version_config_local,prog_argu[debug].file_info_local);
+	//get_file_info(prog_argu[debug].version_config_local,prog_argu[debug].file_info_local);
 
 	//
 	char version_config[128];
@@ -1474,16 +1467,6 @@ main(int argc,char **argv)
 	signew.sa_handler=SIG_IGN;
 	sigaction(SIGCHLD,&signew,0);
 
-	debug=1;
-	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
-	strcpy(prog_argu[debug].apk_dir,"../.apk");
-	strcpy(prog_argu[debug].config_dir,"../.config");
-	strcpy(prog_argu[debug].app_config,"../.config/app.config");
-	strcpy(prog_argu[debug].log_dir,"../.log");
-	strcpy(prog_argu[debug].logbak_dir,"../.logbak");
-	strcpy(prog_argu[debug].version_config_local,"../.config/version.config");
-	strcpy(prog_argu[debug].model_config_version_file,"../.disp/model.config.version");
-	strcpy(prog_argu[debug].model_config_file,"../.config/model.config");
 
 	debug=0;
 	memset(&prog_argu[debug],0,sizeof(PROG_ARGU));
@@ -1503,17 +1486,14 @@ main(int argc,char **argv)
 
 	//reset mac
 	reset_mac();
-
 	
 	ntpupdate(2);
-
 
 	//delete old files
 	delete_old_logs();
 	
 	//copy day logs when sdcard exists
 	copy_day_logs();
-
 	
 
 	
