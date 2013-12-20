@@ -50,6 +50,8 @@ version
 2.43 fix the bug of local_version being empty
 2.44 two ways to check crc
 	no more use local version config
+2.46 no more compare crc for two times
+	no more compare crc every time
 *****/
 
 
@@ -110,7 +112,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.44";
+static const char *version="2.46";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -275,8 +277,8 @@ static check_crc(char *filename,char *official_crc)
 
 	char _filename[128];
 	sprintf(_filename,"../tmp/%s",filename);
-	sprintf(crc_value,"%X %X",get_file_crc(_filename),get_file_crc_general(filename));
-	
+	//sprintf(crc_value,"%X %X",get_file_crc(_filename),get_file_crc_general(filename));
+	sprintf(crc_value,"%X",get_file_crc(_filename));
 	if(strstr(crc_value,official_crc))
 	{
 		proclog("%s download successfully!\n",filename);
@@ -334,25 +336,33 @@ static char* get_local_version(char *name,char *local_version)
 */
 static char* get_local_crc(char *name,char *local_crc)
 {
+	int i=0;
+	while(1)
+	{
+		if(!prog_argu[debug].file_info_local[i].filename[0])
+		{
+			return NULL;
+		}
+		if(!strcmp(prog_argu[debug].file_info_local[i].filename,name))
+		{
+			strcpy(local_crc,prog_argu[debug].file_info_local[i].crc);
+			//return prog_argu[debug].file_info_local[i].version;
+			return local_crc;
+		}
+		i++;
+	}
 
-	//there will be two crc values put into the local_crc after calculating, one is the old version of crc, the other is new version
-	//in the future,as long as any one matched ,I take it as ok!
-	if(!is_file_exist(name))
-		return NULL;
-	if(is_dir(name))
-		return NULL;
-	sprintf(local_crc,"%X %X",get_file_crc(name),get_file_crc_general(name));
 	return local_crc;
+
 }
 static is_new(int i)
 {
 	char local_crc[64];
 	memset(local_crc,0,sizeof(local_crc));
 
-	char destfile[128];
-	sprintf(destfile,"../%s/%s",prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].filename);
-	get_local_crc(destfile,local_crc);
+	get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc);
 	proclog("file:%s  localcrc:[%s]-servercrc:[%s]\n",prog_argu[debug].file_info_server[i].filename,local_crc,prog_argu[debug].file_info_server[i].crc);
+
 	if(strstr(local_crc, prog_argu[debug].file_info_server[i].crc))
 	{
 		return 0;
@@ -455,107 +465,129 @@ static fetch_all_files()
 {
 	int i=0;
 	char cmd[512];
-	char destfile[128];
+	char destfile[256];
 	char buffer[des_len];
-	time_t tt;
+	int seq=0;
 
-	int updated_num=0;
-	int will_update_num=0;
+	int delete_items_array[300];
+	int delete_items_num=0;
+	int update_items_array[300];
+	int update_items_num=0;// how many will update
+	int updated_items_num=0;//how many actually updated
 
-
-	//count how many files need to be updated
-
-	i=0;
-
-	//notice!!! the "i" in file_info_server and in file_info_local are not the same !they have different sequnce!
-	while(1)
-	{
-		if(!prog_argu[debug].file_info_server[i].filename[0])
-			break;
-		if(!strcmp(prog_argu[debug].file_info_server[i].version,"0"))
-		{
-			;
-		}
-		else if(is_new(i))
-		{
-			will_update_num++;
-		}
-		i++;
-	}
-	
-	prt_screen(1, 1, 0,"共有%d个文件需更新",will_update_num);
-	proclog("excepting update num: %d\n", will_update_num);
-	//begin to update
-	prt_screen(0, 1, 0,"正在更新");
-	i=0;
+	int version_config_fd;
+	version_config_fd=open(prog_argu[debug].version_config_local, O_CREAT|O_WRONLY|O_APPEND|O_TRUNC,0600);
 
 	char local_crc[64];
-	memset(local_crc,0,sizeof(local_crc));
-	while(1)
+
+
+
+	//////////count how many files need to be updated
+
+	//notice!!! the "i" in file_info_server and in file_info_local are not the same !they have different sequnce!
+	for(i=0;i<1000;i++)
 	{
+		//is finished
 		if(!prog_argu[debug].file_info_server[i].filename[0])
 			break;
 
-		sprintf(destfile,"../%s/%s",prog_argu[debug].file_info_server[i].local_dir,prog_argu[debug].file_info_server[i].filename);
-
-		memset(buffer,0,sizeof(buffer));
-		//delte file
+		//need to be deleted
 		if(!strcmp(prog_argu[debug].file_info_server[i].version,"0"))
 		{
-			unlink(destfile);
-			i++;
+			delete_items_array[delete_items_num++] = i;
 			continue;
-			
 		}
-		else if(is_new(i))
+
+		//need to be updated
+		memset(local_crc,0,sizeof(local_crc));
+		get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc);
+		proclog("file:%s  localcrc:[%s]-servercrc:[%s]\n",prog_argu[debug].file_info_server[i].filename,local_crc,prog_argu[debug].file_info_server[i].crc);
+
+		//if(!strstr(local_crc, prog_argu[debug].file_info_server[i].crc))
+		if(strcmp(prog_argu[debug].file_info_server[i].crc ,local_crc))
 		{
-			if(fetch(prog_argu[debug].file_info_server[i].filename, prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].crc)==0)
-			{
-				prt_screen(1, 1, 0,".");
-				unlink(destfile);
-				sprintf(cmd,"chmod +x ../tmp/%s",prog_argu[debug].file_info_server[i].filename);
-				//proclog("%s\n",cmd);
-				system(cmd);
-				
-				sprintf(cmd,"cp ../tmp/%s ../%s",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].local_dir);
-				//proclog("%s\n",cmd);
-				system(cmd);
-
-				//delete
-				sprintf(cmd,"rm -f ../tmp/%s",prog_argu[debug].file_info_server[i].filename);
-				system(cmd);
-
-				sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,0,prog_argu[debug].file_info_server[i].crc);
-
-				updated_num++;
-				
-				proclog("updated:%s",buffer);
-			}
-			else
-			{
-				proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[i].filename);
-				//sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
-			}
-			
-			
+			update_items_array[update_items_num++] = i;
+			continue;
 		}
 
-		i++;
-		
+
+		//don't need to be update,then write it to version_config right now
+		sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[i].filename,prog_argu[debug].file_info_server[i].server_dir,prog_argu[debug].file_info_server[i].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[i].filename,local_crc));
+		T_DES(1,key,des_len,buffer,buffer);
+		write(version_config_fd,buffer,sizeof(buffer));
+
+	}
+	
+	proclog("all:%d, delete:%d, update: %d\n",i, delete_items_num, update_items_num);
+	//begin to update
+	prt_screen(0, 1, 0,"正在更新");
+	
+
+
+	//////////////////
+	prt_screen(1, 1, 0,"正在删除%d个文件",delete_items_num);
+	proclog("deleting %d files if exist...\n",delete_items_num);
+	for(i=0;i<delete_items_num;i++)
+	{
+		seq=delete_items_array[i];
+		sprintf(destfile,"../%s/%s",prog_argu[debug].file_info_server[seq].local_dir,prog_argu[debug].file_info_server[seq].filename);
+		//proclog("deleting %s...\n",destfile);
+		unlink(destfile);
 	}
 
 
-	
-	proclog("really updated num:%d\n",updated_num);
-
-	if( (updated_num ==  will_update_num) && (updated_num) )//all files updated successfully
+	//////////////////
+	prt_screen(1, 1, 0,"正在更新%d个文件",update_items_num);
+	proclog("start to update %d files...\n",update_items_num);
+	for(i=0;i<update_items_num;i++)
 	{
-		proclog("all %d files updated successfully!, update model.config...\n",updated_num);
+		seq=update_items_array[i];
+		if(fetch(prog_argu[debug].file_info_server[seq].filename, prog_argu[debug].file_info_server[seq].server_dir,prog_argu[debug].file_info_server[seq].crc)==0)
+		{
+			prt_screen(1, 1, 0,".");
+			unlink(destfile);
+			sprintf(cmd,"chmod +x ../tmp/%s",prog_argu[debug].file_info_server[seq].filename);
+			//proclog("%s\n",cmd);
+			system(cmd);
+
+			sprintf(cmd,"cp ../tmp/%s ../%s",prog_argu[debug].file_info_server[seq].filename,prog_argu[debug].file_info_server[seq].local_dir);
+			//proclog("%s\n",cmd);
+			system(cmd);
+
+			//delete
+			sprintf(cmd,"rm -f ../tmp/%s",prog_argu[debug].file_info_server[seq].filename);
+			system(cmd);
+
+			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[seq].filename,prog_argu[debug].file_info_server[seq].server_dir,prog_argu[debug].file_info_server[seq].local_dir,"0",prog_argu[debug].file_info_server[seq].crc);
+
+			updated_items_num++;
+
+			//proclog("updated:%s",buffer);
+		}
+		else
+		{
+			proclog("download %s failed!,quiting\n",prog_argu[debug].file_info_server[seq].filename);
+			sprintf(buffer,"%s %s %s %s %s\n",prog_argu[debug].file_info_server[seq].filename,prog_argu[debug].file_info_server[seq].server_dir,prog_argu[debug].file_info_server[seq].local_dir,"0",get_local_crc(prog_argu[debug].file_info_server[seq].filename,local_crc));
+		}
+
+		T_DES(1,key,des_len,buffer,buffer);
+		write(version_config_fd,buffer,sizeof(buffer));
+
+	}
+	close(version_config_fd);
+
+
+	////////////
+
+	proclog("really updated num:%d\n",updated_items_num);
+
+	if( (updated_items_num ==  update_items_num) && (updated_items_num) )//all files updated successfully
+	{
+		proclog("all %d files updated successfully!, update model.config...\n",updated_items_num);
 		change_update_version();
 	}
 	print_model_config_version();
 	sleep(2);
-	
 
 }
 static read_server_config(char *config_name)
@@ -834,7 +866,7 @@ update()
 	//memset(prog_argu[debug].file_info_server,0,sizeof(FILE_INFO)*UPD_LST_MAX_NUM);
 
 	//
-	//get_file_info(prog_argu[debug].version_config_local,prog_argu[debug].file_info_local);
+	get_file_info(prog_argu[debug].version_config_local,prog_argu[debug].file_info_local);
 
 	//
 	char version_config[128];
@@ -1385,17 +1417,6 @@ static delete_old_logs()
 	sprintf(cmd,"rm -rf ../logbak2");
 	proclog("%s\n",cmd);
 	system(cmd);
-	
-	debug=1;
-	sprintf(cmd,"rm `find %s -mtime +15`",prog_argu[debug].logbak_dir);
-	proclog("%s\n",cmd);
-	system(cmd);
-	
-	sprintf(cmd,"rm `find %s -mtime +3|grep day.sys`",prog_argu[debug].log_dir);
-	proclog("%s\n",cmd);
-	system(cmd);
-
-
 
 	debug=0;
 	sprintf(cmd,"rm `find %s -mtime +15`",prog_argu[debug].logbak_dir);
@@ -1482,7 +1503,6 @@ main(int argc,char **argv)
 	ch_root_dir();
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
-	
 
 	//reset mac
 	reset_mac();
@@ -1496,11 +1516,6 @@ main(int argc,char **argv)
 	copy_day_logs();
 	
 
-	
-	//debug
-	//debug=1;
-	//update();
-	//proclog("update finished!\n");
 
 	//normal
 	debug=0;
