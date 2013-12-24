@@ -35,6 +35,7 @@
 	remove the first line of inception.config( old first line is shortcut number)
 2.03 fix following bugs in version 2.02
 2.04 @field in model.config !strcmp==>strstr
+2.05 use a new method to install a sieral types of phones like lenovo and so on.
 
 */
 
@@ -52,7 +53,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="2.04";
+static const char *version="2.05";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -78,6 +79,7 @@ typedef struct
 	char os_version[64];
 	char config_name[32];
 	char phone_id[32];
+	int install_method;
 //	int apk_num;
 }DEVICE_INFO;
 DEVICE_INFO device_info;
@@ -133,6 +135,32 @@ static void printscreen(const char *fmt,...)
 }
 */
 
+static char *string_to_lower(char *str, int len,char *lower_string)
+{
+	int i;
+	for(i=0;i<len;i++)
+	{
+		lower_string[i]=tolower(str[i]);
+	}
+	lower_string[i+1]=0;
+
+	//printf("lower_string:%s\n",lower_string);
+	return lower_string;
+}
+static int select_install_method()
+{
+	char lower_string[32];
+	if(strstr("lenovo", string_to_lower(device_info.manufacturer, strlen(device_info.manufacturer),lower_string)))
+	{
+		printf("install method :2\n");
+		device_info.install_method = 2;
+	}
+	else
+	{
+		printf("install method :1\n");
+		device_info.install_method = 1;
+	}
+}
 static void proclog(const char *fmt,...)
 {
 	char ts[32];
@@ -768,68 +796,21 @@ static void tab2space(char *str)
                 p++;
         }
 }
-static install_one_apk(char *apk,char *pkg)
+
+static  __install_one_apk_1(char *apk,char *pkg, char *result)
 {
 	FILE *fp;
-	char buffer[200] = {0};
-
-	char result[32];
 	char cmd[512];
-	int try_count=0;
-	
-	time_t app_install_start_time,app_install_finish_time;
-
-
-	//printscreen("%s start installing...\n",apk);
-	alarm(60);
-
-
-
-
-	if(!apk_exist(apk))
-	{
-		//printscreen("ERR:%s doesn't exists!\n",apk);
-		proclog("ERR:%s doesn't exists!\n",apk);
-		return;
-	}
-
-	app_install_start_time=time(0);
-install:
-	if(++try_count >=3)
-		goto install_end;
-	//check whether the package exist
-	
-	sprintf(cmd,"%s -s %s shell pm path %s",adb,device_info.id,pkg);
-	proclog("%s\n",cmd);
-	if((fp = popen(cmd,"r")) == NULL)
-	{
-		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to execute:%s\n",cmd);
-		goto install;
-	}
-	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
-	{
-
-		///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
-		if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
-		{
-			proclog("manufacturer %s, pkg:%s, skip!\n", device_info.manufacturer, pkg);
-			return;
-		}
-
-
-		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
-		proclog("%s\n",cmd);
-		system(cmd);
-		
-	}
-	
-	
-
+	char buffer[200] = {0};
 	//install
+	int try_count=0;
+	install:
+		if(++try_count >=3)
+			return;
+
 	sprintf(cmd,"%s -s %s install -r %s",adb,device_info.id,apk);
 	proclog("%s\n",cmd);
-	
+
 	if((fp = popen(cmd,"r")) == NULL)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
@@ -850,6 +831,107 @@ install:
 		}
 	}
 
+	strcpy(result,buffer);
+	tab2space(trim(result));
+
+	if(strstr(buffer,"Success"))
+	{
+		//printscreen("%s %s",apk,buffer);
+		proclog("%s %s",apk,buffer);
+		pclose(fp);
+		return;
+	}
+	else
+	{
+		//printscreen("ERR:%s %s",apk,buffer);
+		proclog("ERR:%s %s",apk,buffer);
+		pclose(fp);
+
+/*
+		//if it's some error , do some special deal
+		if(strstr(buffer,"INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES"))
+		{
+			//uninstall first
+			char pkg[128];
+			if(get_pkg_name_by_apk(apk,pkg))
+				return;
+			if(uninstall_apk(pkg))
+				return;
+		}
+*/
+		goto install;
+	}
+
+}
+static  __install_one_apk_2(char *apk,char *pkg, char *result)
+{
+	FILE *fp;
+	char cmd[512];
+	char buffer[200] = {0};
+
+	strcpy(result,"NULL");
+
+	//get apk file name
+	char apkfilename[32];
+	sprintf(apkfilename,strrchr(apk,'/')+1);
+	//proclog("#####installing %s#####\n",apkfilename);
+
+	//push
+	sprintf(cmd,"%s -s %s push %s /data/local/tmp",adb,device_info.id,apk);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+	//make ins.sh
+	int fd;
+	char insfilename[128];
+
+	sprintf(insfilename,"../tmp/install.sh");
+	fd=open(insfilename, O_CREAT|O_WRONLY|O_TRUNC,0600);
+	sprintf(buffer,"pm install -r /data/local/tmp/%s",apkfilename);
+	write(fd,buffer,strlen(buffer));
+	close(fd);
+
+	//push install.sh
+	sprintf(cmd,"%s -s %s push %s /data/local/tmp",adb,device_info.id,insfilename);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+	//chmod 777
+	sprintf(cmd,"%s -s %s shell chmod 777 /data/local/tmp/install.sh",adb,device_info.id);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+
+//install
+	int try_count=0;
+install:
+	if(++try_count >1)
+		goto install_end;
+
+	sprintf(cmd,"%s -s %s shell /data/local/tmp/install.sh",adb,device_info.id);
+	proclog("%s\n",cmd);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		goto install;
+	}
+
+	int i=0;
+	for(i=0;i<2;i++)
+	{
+		//
+		if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+		{
+			//printscreen("ERR:read failed in install_one_apk\n");
+			pclose(fp);
+			sleep(1);
+			goto install;
+		}
+	}
+
+	strcpy(result,buffer);
+	tab2space(trim(result));
 
 	if(strstr(buffer,"Success"))
 	{
@@ -880,13 +962,80 @@ install:
 	}
 
 install_end:
+	sprintf(cmd,"%s -s %s shell rm /data/local/tmp/%s",adb,device_info.id,apkfilename);
+	proclog("%s\n",cmd);
+	system(cmd);
+}
+static __uninstall_one_apk(char *apk,char *pkg)
+{
+	//check whether the package exist
+	FILE *fp;
+	char cmd[512];
+	char buffer[200] = {0};
+	sprintf(cmd,"%s -s %s shell pm path %s",adb,device_info.id,pkg);
+	proclog("%s\n",cmd);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		return;
+	}
+	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
+	{
+
+		///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
+		if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
+		{
+			proclog("manufacturer %s, pkg:%s, skip!\n", device_info.manufacturer, pkg);
+			return;
+		}
+
+
+		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
+		proclog("%s\n",cmd);
+		system(cmd);
+		
+	}
+	
+}
+static install_one_apk(char *apk,char *pkg)
+{
+	char result[32];
+
+
+	time_t app_install_start_time,app_install_finish_time;
+
+
+	//printscreen("%s start installing...\n",apk);
+	alarm(60);
+
+	if(!apk_exist(apk))
+	{
+		//printscreen("ERR:%s doesn't exists!\n",apk);
+		proclog("ERR:%s doesn't exists!\n",apk);
+		alarm(0);
+		return;
+	}
+
+	app_install_start_time=time(0);
+
+	//uninstall
+	__uninstall_one_apk(apk,pkg);
+
+
+	//install
+	if(device_info.install_method==2)
+		__install_one_apk_2(apk,pkg,result);
+	else
+		__install_one_apk_1(apk,pkg,result);
+
 	app_install_finish_time = time(0);
-	strcpy(result,trim(buffer));
-	tab2space(result);
+
 	if(!strstr(apk,monitor_apk))
 		record_app(app_install_start_time,app_install_finish_time,apk,result);
-	return;
 	
+	alarm(0);
+
 }
 
 static install_monitor()
@@ -1067,7 +1216,7 @@ get_imei:
 	if(!check_imei(trim(imei)))
 	{
 		strcpy(device_info.imei,imei);
-		proclog("SYS:get imei:%s\n",device_info.imei);
+		proclog("SYS:get imei by dumpsys:%s\n",device_info.imei);
 
 	}
 
@@ -1167,24 +1316,14 @@ static pull_imei()
 	if(!check_imei(trim(buffer)))
 	{
 		strcpy(device_info.imei,buffer);
-		proclog("SYS:get imei:%s\n",device_info.imei);
+		proclog("SYS:get imei by imei.aaa:%s\n",device_info.imei);
 	}
 
 	//
 
 	
 }
-static get_imei()
-{
-	pull_imei();
-	if(check_imei(device_info.imei))
-		get_imei_by_dumpsys();
-	if(check_imei(device_info.imei))
-	{
-		strcpy(device_info.imei,"NONE");
-		proclog("get imei failed!");
-	}
-}
+
 static get_name(char *buffer,char *name)
 {
         char *p, *q;
@@ -1254,38 +1393,39 @@ static get_prop(char *name,char *value)
 	pclose(fp);
 	proclog("get %s:%s\n",name,value);
 }
-
-
-static get_device_info()
+static get_imei()
 {
-	//get_serialno();
-	get_imei();
-
-	char model[64];
-	memset(model,0,sizeof(model));
-	get_prop("ro.product.model",model);
-	strcpy(device_info.model,model);
-
+	pull_imei();
+	if(check_imei(device_info.imei))
+		get_imei_by_dumpsys();
+	if(check_imei(device_info.imei))
+	{
+		strcpy(device_info.imei,"NONE");
+		proclog("get imei failed!");
+	}
+}
+static get_manufacturer()
+{
 	char manufacturer[64];
 	memset(manufacturer,0,sizeof(manufacturer));
 	get_prop("ro.product.manufacturer",manufacturer);
 	strcpy(device_info.manufacturer,manufacturer);
-
-
+}
+static get_os_version()
+{
 	char os_version[64];
 	memset(os_version,0,sizeof(os_version));
 	get_prop("ro.build.version.release",os_version);
 	strcpy(device_info.os_version,os_version);
-	/*
-	printf("[%s]\n",device_info.id);
-	printf("[%s]\n",device_info.imei);
-	printf("[%s]\n",device_info.model);
-	printf("[%s]\n",device_info.serialno);
-	*/
-
-	//printscreen("%s\t%s\t%s\n",device_info.id,device_info.imei,device_info.model/*,device_info.serialno*/);
-	
 }
+static get_model()
+{
+	char model[64];
+	memset(model,0,sizeof(model));
+	get_prop("ro.product.model",model);
+	strcpy(device_info.model,model);
+}
+
 static void procquit(void)
 {
 	proclog("quiting...\n");
@@ -1428,11 +1568,16 @@ main(int argc,char **argv)
 	proclog("SYS:device installation started!\n");
 	
 
-
+	get_manufacturer();
+	select_install_method();
 	install_monitor();
 	start_monitor(monitor_apk_pkg_init);
-	get_device_info();
+	//get_device_info();
+
 	sleep(1);
+	get_model();
+	get_os_version();
+	get_imei();
 	//get_phone_id();
 	get_config_apks_encrypt();
 	push_config();
