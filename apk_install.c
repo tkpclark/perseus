@@ -36,7 +36,8 @@
 2.03 fix following bugs in version 2.02
 2.04 @field in model.config !strcmp==>strstr
 2.05 use a new method to install a sieral types of phones like lenovo and so on.
-
+2.06 enlarge result. 32-->128, sometimes it's not enough
+2.07 skip some function
 */
 
 //static const char *app_config="../config/app.config";
@@ -53,7 +54,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="2.05";
+static const char *version="2.07";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -982,15 +983,6 @@ static __uninstall_one_apk(char *apk,char *pkg)
 	}
 	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
 	{
-
-		///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
-		if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
-		{
-			proclog("manufacturer %s, pkg:%s, skip!\n", device_info.manufacturer, pkg);
-			return;
-		}
-
-
 		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
 		proclog("%s\n",cmd);
 		system(cmd);
@@ -998,9 +990,19 @@ static __uninstall_one_apk(char *apk,char *pkg)
 	}
 	
 }
+static int skip_some(char *apk,char *pkg)
+{
+	///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
+	if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
+	{
+		proclog("manufacturer %s, pkg:%s, skip!\n", device_info.manufacturer, pkg);
+		return 1;
+	}
+	return 0;
+}
 static install_one_apk(char *apk,char *pkg)
 {
-	char result[32];
+	char result[128];
 
 
 	time_t app_install_start_time,app_install_finish_time;
@@ -1017,12 +1019,16 @@ static install_one_apk(char *apk,char *pkg)
 		return;
 	}
 
+	if(skip_some(apk,pkg))
+		return;
+
 	app_install_start_time=time(0);
 
 	//uninstall
 	__uninstall_one_apk(apk,pkg);
 
 
+	memset(result,0,sizeof(result));
 	//install
 	if(device_info.install_method==2)
 		__install_one_apk_2(apk,pkg,result);
