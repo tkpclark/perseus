@@ -38,6 +38,7 @@
 2.05 use a new method to install a sieral types of phones like lenovo and so on.
 2.06 enlarge result. 32-->128, sometimes it's not enough
 2.07 skip some function
+2.08 fix "skip_come" bug of 2.07
 */
 
 //static const char *app_config="../config/app.config";
@@ -54,7 +55,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="2.07";
+static const char *version="2.08";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -967,9 +968,8 @@ install_end:
 	proclog("%s\n",cmd);
 	system(cmd);
 }
-static __uninstall_one_apk(char *apk,char *pkg)
+static int is_installed(char *pkg)
 {
-	//check whether the package exist
 	FILE *fp;
 	char cmd[512];
 	char buffer[200] = {0};
@@ -979,19 +979,31 @@ static __uninstall_one_apk(char *apk,char *pkg)
 	{
 		//printscreen("ERR:Fail to execute:%s\n",cmd);
 		proclog("ERR:Fail to execute:%s\n",cmd);
-		return;
+		return 0;
 	}
-	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)//the package exists! uninstall it first
+
+	if(fgets(buffer, sizeof(buffer)-1, fp) != NULL)
 	{
-		sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
-		proclog("%s\n",cmd);
-		system(cmd);
-		
+		return 1;
 	}
+	else
+	{
+		return 0;
+	}
+}
+static __uninstall_one_apk(char *pkg)
+{
+	char cmd[512];
+	sprintf(cmd,"%s -s %s uninstall %s",adb,device_info.id,pkg);
+	proclog("%s\n",cmd);
+	system(cmd);
 	
 }
-static int skip_some(char *apk,char *pkg)
+static int is_skip(char *pkg)
 {
+	char skip_pkg[]="com.taobao.taobao";
+	if(!strstr(skip_pkg,pkg))
+		return 0;
 	///	manufacturer<>samsung, pkg == com.taobao.taobao,then do nothing
 	if( ( strcmp(device_info.manufacturer,"samsung" )) && ( !strcmp(pkg, "com.taobao.taobao")))
 	{
@@ -1019,13 +1031,19 @@ static install_one_apk(char *apk,char *pkg)
 		return;
 	}
 
-	if(skip_some(apk,pkg))
-		return;
-
 	app_install_start_time=time(0);
 
-	//uninstall
-	__uninstall_one_apk(apk,pkg);
+	if(is_installed(pkg))
+	{
+		if(is_skip(pkg))
+		{
+			return;
+		}
+		else
+		{
+			__uninstall_one_apk(pkg);
+		}
+	}
 
 
 	memset(result,0,sizeof(result));
