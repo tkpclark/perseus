@@ -52,6 +52,8 @@ version
 	no more use local version config
 2.46 no more compare crc for two times
 	no more compare crc every time
+
+2.50 modify log schedule
 *****/
 
 
@@ -112,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.46";
+static const char *version="2.50";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -161,8 +163,8 @@ static void proclog(const char *fmt,...)
 	char filename[128];
 	char box_id[32];
 	memset(box_id,0,sizeof(box_id));
-	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,get_box_id(box_id));
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+	sprintf(filename,"%s/%s_%s.sys.orig",prog_argu[debug].log_dir,ts,get_box_id(box_id));
 
 	//open file and write
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
@@ -178,7 +180,16 @@ static void proclog(const char *fmt,...)
 	flock(fd,LOCK_UN);
 	close(fd);
 }
-
+static int strend(char *str, char *end)
+{
+	//return 1: yes
+	//return 0:no
+        char *_str=str;
+        char *_end=end;
+        char *p=_str+strlen(_str)-strlen(_end);
+        return !strcmp(p,_end);
+        //printf("%s\n",p);
+}
 static int ftp_download(const char *filename,const char *server_dir)
 {
 	//download
@@ -837,7 +848,7 @@ update()
 	system("rm -rf ../tmp/*");
 	proclog("update starting...\n");
 	
-	read_server_config(prog_argu[debug].app_config);
+
 	if(check_connection()==0)
 	{
 		down_from=1;
@@ -1019,7 +1030,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 
 			
 			//sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
-			sprintf(cmd, "cat %s >> %s/%s  && rm %s",filename,prog_argu[debug].logbak_dir,filename,filename);
+			sprintf(cmd, "cat %s >> %s.tcp  && rm %s",filename,filename,filename);
 			printf("%s\n",cmd);
 			system(cmd);
 			ftruncate(posfd,0);
@@ -1151,13 +1162,13 @@ static upload_log_tcp()
 
 	//printf("debug:%d\n",debug);
 	
-	read_app_config(prog_argu[debug].app_config,"tcp_server_ip",prog_argu[debug].server_info.tcp_server_ip);
+	//read_app_config(prog_argu[debug].app_config,"tcp_server_ip",prog_argu[debug].server_info.tcp_server_ip);
 	if(strlen(prog_argu[debug].server_info.tcp_server_ip) <= 0 )
 	{
 		prt_screen(2,0,0,"读取配置文件错误！");
 		return;
 	}
-	read_app_config(prog_argu[debug].app_config,"tcp_server_port",prog_argu[debug].server_info.tcp_server_port);
+	//read_app_config(prog_argu[debug].app_config,"tcp_server_port",prog_argu[debug].server_info.tcp_server_port);
 	if(strlen(prog_argu[debug].server_info.tcp_server_port) <= 0 )
 	{
  		prt_screen(2,0,0,"读取配置文件错误！");
@@ -1211,7 +1222,7 @@ static upload_log_tcp()
 	while(name = readdir(dp))
 	{
 
-		if(!strstr(name->d_name,"day.record"))
+		if(!strend(name->d_name,"record.orig"))
 			continue;
 		if(send_log_tcp(name->d_name,0,posfd,sockfd)<0)
 			return -1;
@@ -1419,11 +1430,8 @@ static delete_old_logs()
 	system(cmd);
 
 	debug=0;
-	sprintf(cmd,"rm `find %s -mtime +15`",prog_argu[debug].logbak_dir);
-	proclog("%s\n",cmd);
-	system(cmd);
 	
-	sprintf(cmd,"rm `find %s -mtime +3|grep day.sys`",prog_argu[debug].log_dir);
+	sprintf(cmd,"rm `find %s -mtime +7|grep ftp`",prog_argu[debug].log_dir);
 	proclog("%s\n",cmd);
 	system(cmd);
 
@@ -1439,11 +1447,7 @@ static copy_day_logs()
 		proclog("%s\n",cmd);
 		system(cmd);
 
-		sprintf(cmd,"cp %s/*day* %s",prog_argu[debug].log_dir,sdcard_day_dir);
-		proclog("%s\n",cmd);
-		system(cmd);
-
-		sprintf(cmd,"cp %s/*day* %s",prog_argu[debug].logbak_dir,sdcard_day_dir);
+		sprintf(cmd,"cp %s/*.orig %s",prog_argu[debug].log_dir,sdcard_day_dir);
 		proclog("%s\n",cmd);
 		system(cmd);
 
@@ -1455,6 +1459,127 @@ static copy_day_logs()
 
 }
 //////////////////////////////////////////////
+//ftp upload
+static int ftp_upload(const char *filename)
+{
+	//download
+//	printf("downloading %s from server\n",filename);
+	if(!is_online(prog_argu[debug].server_info.ip,21))
+	{
+		prt_screen(3, 0, 1,"网络中断,上传失败!\n");
+		return -1;
+	}
+	prt_screen(3, 0,1, "正在上传日志...\n");
+	FILE *fp;
+	char cmd[256];
+	sprintf(cmd,"./ftp_upload %s %s %s %s %s 2>&1",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password,filename,prog_argu[debug].log_dir);
+	proclog("%s\n",cmd);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		pclose(fp);
+		return -1;
+	}
+	char buffer[1024];
+	fread(buffer , sizeof(buffer) , sizeof(char) , fp);
+
+
+
+	//proclog("\n\n\n[%s]\n\n\n",buffer);
+
+	if(strstr(buffer,"File receive OK"))
+	{
+	//	alarm(0);
+		prt_screen(3, 0, 1,"上传日志成功!\n");
+		proclog("%s upload successfully!\n",filename);
+		pclose(fp);
+		return 0;
+	}
+	else
+	{
+		prt_screen(3, 0, 1,"上传日志失败!\n");
+		proclog("%s upload failed!\n",filename);
+		proclog("\n\n\n[%s]\n\n\n",buffer);
+		return -1;
+	}
+
+}
+static int  need_upload(char *filename)
+{
+	char name[128];
+	char *p;
+	strcpy(name,filename);
+	p=strrchr(name,'_');
+	if(p==NULL)
+		return 0;
+
+	*p=0;
+
+	char ts[32];
+	time_t tt;
+	tt=time(0);
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+
+
+	if(strcmp(ts,name) >0)
+		return 1;
+	else
+		return 0;
+}
+static int upload_log_ftp()
+{
+
+	char cmd[256];
+	DIR * dp;
+	char upload_file[128];
+	struct dirent *name;
+	char path[256];
+	char logfilename[128];
+
+	//printf("debug:%d\n",debug);
+	dp = opendir(prog_argu[debug].log_dir);
+
+	if(!dp)
+	{
+		return -1;
+	}
+	char filename[128];
+	int tarflag=0;//are there any files upload failed
+
+	while(name = readdir(dp))
+	{
+		if(strlen(name->d_name)<3)
+			continue;
+		if(!strend(name->d_name,"sys.orig") && !strend(name->d_name,"record.orig.tcp"))
+			continue;
+		//printf("%s\n",name->d_name);
+		sprintf(upload_file,"%s/%s",prog_argu[debug].log_dir,name->d_name);
+
+		if(need_upload(name->d_name))
+		{
+			sleep(5);//sleep before upload,avoid too tight to the last log of apk_install
+			if(!ftp_upload(name->d_name))
+			{
+				sprintf(cmd,"mv %s %s.ftp",upload_file,upload_file);
+				proclog("%s\n",cmd);
+				system(cmd);
+
+			}
+
+
+		}
+
+
+
+	}
+	closedir(dp);
+
+}
+
+
+
+
+
 main(int argc,char **argv)
 {
 	write_version("../disp/vud",version,strlen(version));
@@ -1500,9 +1625,11 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].model_config_version_file,"../disp/model.config.version");
 	strcpy(prog_argu[debug].model_config_file,"../config/model.config");
 	
+	read_server_config(prog_argu[debug].app_config);
 	ch_root_dir();
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
+
 
 	//reset mac
 	reset_mac();
@@ -1526,7 +1653,9 @@ main(int argc,char **argv)
 
 	sleep(1);
 	if(upload_log_tcp()<0)
-		prt_screen(2, 0, 0, "日志上传失败!\n");
+		prt_screen(2, 0, 0, "TCP日志上传失败!\n");
+
+	upload_log_ftp();
 
 }	
 
