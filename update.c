@@ -1529,6 +1529,7 @@ static int  need_upload(char *filename)
 static int upload_log_ftp()
 {
 
+	prt_screen(1, 0, 0,"正在准备上传日志(ftp)...\n");
 	char cmd[256];
 	DIR * dp;
 	char upload_file[128];
