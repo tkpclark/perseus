@@ -192,7 +192,7 @@ static void proclog(const char *fmt,...)
 	int fd;
 
 	
-//print screen
+//print screen e
 /*
 	sprintf(buf,GREEN"[%s]"NONE RED"[%s]"NONE YELLOW"[%s]"NONE"%s",ts,device_info.id,version,tmp);
 	fd=open("/dev/tty1", O_WRONLY|O_APPEND);
