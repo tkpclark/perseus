@@ -114,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="2.50";
+static const char *version="o3.01";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1152,7 +1152,7 @@ static upload_log_tcp()
 	char upload_file[128];
 	int upload_file_num=0;
 	struct dirent *name;
-	char path[256];
+
 	char logfilename[128];
 	char buf[256];
 	int send_pos=0;
@@ -1177,8 +1177,7 @@ static upload_log_tcp()
 
 		
 
-	getcwd(path,sizeof(path));
-	chdir(prog_argu[debug].log_dir);
+
 
 	//connect to server
 	prt_screen(1, 1,0,"正在连接服务器...");
@@ -1222,7 +1221,7 @@ static upload_log_tcp()
 	while(name = readdir(dp))
 	{
 
-		if(!strend(name->d_name,"record.orig"))
+		if(!strend(name->d_name,"record.orig") && !strend(name->d_name,"day.record"))
 			continue;
 		if(send_log_tcp(name->d_name,0,posfd,sockfd)<0)
 			return -1;
@@ -1234,7 +1233,7 @@ static upload_log_tcp()
 	close(posfd);
 	shutdown(sockfd,2);
 	close(sockfd);
-	chdir(path);
+
 	if(upload_file_num)
 		prt_screen(1, 1, 0, "\n上传日志成功!共%d个文件\n", upload_file_num);
 	else
@@ -1551,7 +1550,7 @@ static int upload_log_ftp()
 	{
 		if(strlen(name->d_name)<3)
 			continue;
-		if(!strend(name->d_name,"sys.orig") && !strend(name->d_name,"record.orig.tcp"))
+		if(!strend(name->d_name,"sys.orig") && !strend(name->d_name,"record.orig.tcp")&& !strend(name->d_name,"day.record.tcp")&& !strend(name->d_name,"day.sys"))
 			continue;
 		//printf("%s\n",name->d_name);
 		sprintf(upload_file,"%s/%s",prog_argu[debug].log_dir,name->d_name);
@@ -1631,12 +1630,13 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 
-
+	if(0)
+	{
 	//reset mac
 	reset_mac();
 	
 	ntpupdate(2);
-
+	}
 	//delete old files
 	delete_old_logs();
 	
@@ -1653,8 +1653,14 @@ main(int argc,char **argv)
 
 
 	sleep(1);
+	char path[256];
+	getcwd(path,sizeof(path));
+	chdir(prog_argu[debug].log_dir);
 	if(upload_log_tcp()<0)
 		prt_screen(2, 0, 0, "TCP日志上传失败!\n");
+	chdir(path);
+
+
 
 	upload_log_ftp();
 
