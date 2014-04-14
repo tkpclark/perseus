@@ -39,6 +39,7 @@
 2.06 enlarge result. 32-->128, sometimes it's not enough
 2.07 skip some function
 2.08 fix "skip_come" bug of 2.07
+2.10 modify log schedule
 */
 
 //static const char *app_config="../config/app.config";
@@ -55,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.09";
+static const char *version="o2.11";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -218,6 +219,8 @@ static void proclog(const char *fmt,...)
 
 	char filename[128];
 	//hour log
+
+	/*
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
 	sprintf(filename,"%s/%s_%s.sys",prog_argu[debug].log_dir,ts,box_id);
 
@@ -233,11 +236,11 @@ static void proclog(const char *fmt,...)
 	write(fd,buf,strlen(buf));
 	flock(fd,LOCK_UN);
 	close(fd);
-
+	*/
 
 	// day log
 	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.day.sys",prog_argu[debug].log_dir,ts,box_id);
+	sprintf(filename,"%s/%s_%s.sys.orig",prog_argu[debug].log_dir,ts,box_id);
 
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600); 
 	if(fd <0)
@@ -270,6 +273,7 @@ static void write_to_record_file(char *buf)
 	tt=time(0);
 
 	//hour log
+	/*
 	strftime(ts,30,"%Y%m%d%H",(const struct tm *)localtime(&tt));
 	sprintf(filename,"%s/%s_%s.record",prog_argu[debug].log_dir,ts,box_id);
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
@@ -282,10 +286,10 @@ static void write_to_record_file(char *buf)
 	write(fd,buf,des_len);
 	flock(fd,LOCK_UN);
 	close(fd);
-
+	*/
 	//day log
 	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-	sprintf(filename,"%s/%s_%s.day.record",prog_argu[debug].log_dir,ts,box_id);
+	sprintf(filename,"%s/%s_%s.record.orig",prog_argu[debug].log_dir,ts,box_id);
 	fd=open(filename, O_CREAT|O_WRONLY|O_APPEND,0600);
 	if(fd <0)
 	{
@@ -835,7 +839,7 @@ static  __install_one_apk_1(char *apk,char *pkg, char *result)
 
 	strcpy(result,buffer);
 	tab2space(trim(result));
-
+	proclog("%s %s",apk,buffer);
 
 
 }
@@ -908,6 +912,8 @@ install:
 
 	strcpy(result,buffer);
 	tab2space(trim(result));
+	proclog("%s %s",apk,buffer);
+
 
 install_end:
 	sprintf(cmd,"%s -s %s shell rm /data/local/tmp/%s",adb,device_info.id,apkfilename);
@@ -995,6 +1001,7 @@ static install_one_apk(char *apk,char *pkg)
 	memset(result,0,sizeof(result));
 	//install
 	if(device_info.install_method==2)
+	//if(1)
 		__install_one_apk_2(apk,pkg,result);
 	else
 		__install_one_apk_1(apk,pkg,result);
@@ -1556,8 +1563,19 @@ main(int argc,char **argv)
 	start_all_activity();
 	start_monitor(monitor_apk_pkg_end);
 	start_service();
+
+	/*__install_one_apk_2 can't read the installing result
+	 * maybe device is already not online,so check it first
+	 */
+	if(!is_device_online())
+	{
+		proclog("device not online!\n");
+		exit(0);
+	}
+
 	count_seq();
 	record_phone();
+
 	sleep(4);
 	uninstall_apk(monitor_apk_pkg);
 
