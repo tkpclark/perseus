@@ -114,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.01";
+static const char *version="o3.02";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1097,9 +1097,20 @@ static int connect_to_server()
 	}
 	else
 	{
-		proclog("connected to [%s|%s] %s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
+		proclog("connected to [%s|%s] successfully!\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port);
 		return sockfd;
 	}
+}
+static char *fill_to_16(char *str,int len)
+{
+        int i;
+        if(len > 16)
+        		return;
+        for(i=0;i<16-len;i++)
+        {
+                strcat(str,"0");
+        }
+        return str;
 }
 static int server_login(int sockfd)
 {
@@ -1111,7 +1122,10 @@ static int server_login(int sockfd)
 	//box_id
 	char box_id[32];
 	get_box_id(box_id);
-	proclog("boxid:%s\n",box_id);
+	fill_to_16(box_id,strlen(box_id));
+	proclog("tcp login boxid:%s\n",box_id);
+
+
 	strcpy(buffer+4,box_id);
 
 	//gzip or not
@@ -1131,7 +1145,7 @@ static int server_login(int sockfd)
 	int resp=ntohl(*(int*)(buffer));
 	if(resp==0x4C4E0000)
 	{
-		proclog("login to [%s:%s] %s\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
+		proclog("login to [%s:%s] successfully!\n",prog_argu[debug].server_info.tcp_server_ip,prog_argu[debug].server_info.tcp_server_port,strerror(errno));
 		return 0;
 	}
 	else
