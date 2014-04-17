@@ -114,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.02";
+static const char *version="o3.03";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1108,7 +1108,7 @@ static char *fill_to_16(char *str,int len)
         		return;
         for(i=0;i<16-len;i++)
         {
-                strcat(str,"0");
+                strcat(str," ");
         }
         return str;
 }
@@ -1123,7 +1123,7 @@ static int server_login(int sockfd)
 	char box_id[32];
 	get_box_id(box_id);
 	fill_to_16(box_id,strlen(box_id));
-	proclog("tcp login boxid:%s\n",box_id);
+	proclog("tcp login boxid:[%s]\n",box_id);
 
 
 	strcpy(buffer+4,box_id);
@@ -1644,7 +1644,7 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 
-	if(0)
+	if(1)
 	{
 	//reset mac
 	reset_mac();
