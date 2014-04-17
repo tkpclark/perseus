@@ -56,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.11";
+static const char *version="o2.12";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -1434,12 +1434,47 @@ static start_service()
 
 	
 }
+static int get_old_install_id()
+{
+	char buffer[512];
+	memset(buffer,0,sizeof(buffer));
+	FILE *fp;
+	char cmd[512];
+
+	sprintf(cmd,"%s -s %s shell cat %sinception.config 2>&1",adb,device_info.id,device_config_dir);
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		return 0;
+	}
+	if(fgets(buffer, sizeof(buffer)-1, fp) == NULL)
+	{
+		//printscreen("ERR:read failed in push_config\n");
+		proclog("ERR:read failed in push_config\n");
+		return 0;
+	}
+	trim(buffer);
+	if((buffer[0]=='P') && isdigit(buffer[1]) && isdigit(buffer[2])&& isdigit(buffer[3])&& isdigit(buffer[4]) )
+	{
+		//printf("push config successfully!\n");
+		pclose(fp);
+		strcpy(install_id, buffer);
+		return 1;
+	}
+	return 0;
+}
 static get_install_id()
 {
-        struct timeval tv;
-        gettimeofday (&tv, NULL);
-        sprintf(install_id,"P%d%06d",tv.tv_sec , tv.tv_usec );
+	if(!get_old_install_id())
+	{
+		struct timeval tv;
+		gettimeofday (&tv, NULL);
+		sprintf(install_id,"P%d%06d",tv.tv_sec , tv.tv_usec );
+	}
+
 }
+/*
 static get_phone_id()
 {
 	//get box id
@@ -1464,6 +1499,7 @@ static get_phone_id()
 	}
 
 }
+*/
 static is_device_online()
 {
 	FILE *fp;
@@ -1527,7 +1563,7 @@ main(int argc,char **argv)
 	}
 	strcpy(device_info.id,argv[1]);
 
-	get_install_id();
+
 
 	struct sigaction signew;
 
@@ -1538,12 +1574,15 @@ main(int argc,char **argv)
 	strcpy(prog_argu[debug].log_dir,"../log");
 	strcpy(prog_argu[debug].model_config,"../config/model.config");
 
+
 	ch_root_dir();
 
+
+
 	wait_device_online();
-	debug=0;
+	get_install_id();
 	proclog("SYS:device installation started!\n");
-	
+
 
 	get_manufacturer();
 	select_install_method();
