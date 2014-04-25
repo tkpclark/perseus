@@ -56,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.12";
+static const char *version="o2.13";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -1587,6 +1587,7 @@ main(int argc,char **argv)
 	get_manufacturer();
 	select_install_method();
 	install_monitor();
+	sleep(1);
 	start_monitor(monitor_apk_pkg_init);
 	//get_device_info();
 
