@@ -56,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.13";
+static const char *version="o2.14";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -466,20 +466,27 @@ static count_seq()
 {
         char buf[1024];
         int n=0;
-
+        int flock_result;
         int ret=-1;
         int count=0;
 
    
 
         int fd;
-        fd=open(install_seq_file, O_CREAT|O_RDWR|O_APPEND,0600);
+        fd=open(install_seq_file, O_CREAT|O_RDWR,0600);
         if(fd <0)
         {
          	proclog("ERR:open %s failed!%s\n",install_seq_file,strerror(errno));
-			return -2;
+		return -2;
         }
-        flock(fd,LOCK_EX);
+        if(flock(fd,LOCK_EX)==0)
+        {
+        		proclog("lock successfully!\n");
+        }
+        else
+        {
+        		proclog("lock failed!  %s\n", strerror(errno));
+        }
 
 	//if it's the first time to write the file today,clear it first
 	char last_mday[32];
@@ -490,37 +497,68 @@ static count_seq()
 	
 	if(strcmp(last_modify_day(fd,last_mday),(char*)get_day(dtoday)))
 	{
+		proclog("it's first time today,truncate it...\n");
 		 ftruncate(fd,0);
 	}
 
 
 	//begin to read
+	memset(buf,0,sizeof(buf));
+	lseek(fd,SEEK_SET,0);
         n=read(fd,buf,4);
         if(n<0)//it's an error
         {
                 proclog("ERR:read %s failed!%s\n",install_seq_file,strerror(errno));
                 ret=-1;
         }
-
+        proclog("read value before writing, return %d, value:%s\n",n,buf);
 	
+
+        /////////
         if(n==0)//file just be created
         {
                 ftruncate(fd,0);
-                write(fd,"1",1);
+                lseek(fd,SEEK_SET,0);
+                n = write(fd,"1",1);
                 install_seq=1;
+                proclog("write 1 to file,return %d\n", n);
         }
         else //n>0,most of the times
         {
                 ftruncate(fd,0);
+                lseek(fd,SEEK_SET,0);
                 count=atoi(buf)+1;
+                memset(buf,0,sizeof(buf));
                 sprintf(buf,"%d",count);
-                write(fd,buf,strlen(buf));
+                n=write(fd,buf,strlen(buf));
                 install_seq=count;
+                proclog("write %s to file,return %d\n", buf, n);
         }
-        flock(fd,LOCK_UN);
+
+        ////////
+        memset(buf,0,sizeof(buf));
+        lseek(fd,SEEK_SET,0);
+        n=read(fd,buf,4);
+	if(n<0)//it's an error
+	{
+		proclog("ERR:read %s failed!%s\n",install_seq_file,strerror(errno));
+		ret=-1;
+	}
+        proclog("read value after writing, return %d, value:%s\n",n,buf);
+
+
+        ////////
+        if(flock(fd,LOCK_UN)==0)
+        {
+		proclog("unlock successfully!\n");
+        }
+        else
+	{
+		proclog("lock failed!  %s\n", strerror(errno));
+	}
         close(fd);
 
-		proclog("SYS:install_seq:%d\n",install_seq);
+	proclog("SYS:install_seq:%d\n",install_seq);
 }
 static trim_comment(char *buffer)
 {
