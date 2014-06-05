@@ -114,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.03";
+static const char *version="o3.04";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1080,6 +1080,12 @@ static int connect_to_server()
 	servaddr.sin_family = AF_INET;
 	struct  hostent *he;
 	he=gethostbyname(prog_argu[debug].server_info.tcp_server_ip);
+	if(he==NULL)
+	{
+		proclog("failed to reslove name:%s,%s\n",prog_argu[debug].server_info.tcp_server_ip,strerror(errno));
+		prt_screen(2, 0,0,"ÓòÃû½âÎöÊ§°Ü!\n");
+		return -1;
+	}
 	servaddr.sin_addr.s_addr=*(unsigned long *)he->h_addr; 
 	servaddr.sin_port = htons(atoi(prog_argu[debug].server_info.tcp_server_port));
 
