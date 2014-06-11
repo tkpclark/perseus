@@ -114,7 +114,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.04";
+static const char *version="o3.05";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;

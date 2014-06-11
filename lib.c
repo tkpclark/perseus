@@ -304,6 +304,10 @@ int is_online(char *ip,int port)
 	servaddr.sin_family = AF_INET;
 	struct  hostent *he;
 	he=gethostbyname(ip);
+	if(he==NULL)
+	{
+		return 0;
+	}
 	servaddr.sin_addr.s_addr=*(unsigned long *)he->h_addr; 
 	servaddr.sin_port = htons(port);
 
