@@ -56,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.14";
+static const char *version="o2.15";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -1303,7 +1303,7 @@ static pull_imei()
 }
 */
 //./adb shell run-as com.aisidi.AddShortcutFormPKN cat imei.aaa
-static pull_imei()
+static get_imei_2()
 {
 	FILE *fp;
 	char buffer[200] = {0};
@@ -1324,19 +1324,54 @@ static pull_imei()
 	memset(buffer,0,sizeof(buffer));
 	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
 	{
-		proclog("read imei failed!\n");
+		proclog("read imei failed in get_imei_2!\n");
 		uninstall_apk(monitor_apk_pkg);
 		exit(0);
 	}
 	if(!check_imei(trim(buffer)))
 	{
 		strcpy(device_info.imei,buffer);
-		proclog("SYS:get imei by imei.aaa:%s\n",device_info.imei);
+		proclog("SYS:get imei by get_imei_2:%s\n",device_info.imei);
 	}
 
 	//
 
 	
+}
+static get_imei_1()
+{
+	FILE *fp;
+	char buffer[200] = {0};
+	char cmd[512];
+
+	//pull
+	sprintf(cmd,"%s -s %s cat /data/data/com.aisidi.AddShortcutFormPKN/files/imei.aaa 2>&1",adb,device_info.id);
+	proclog("%s\n",cmd);
+
+	if((fp = popen(cmd,"r")) == NULL)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to execute:%s\n",cmd);
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+
+	memset(buffer,0,sizeof(buffer));
+	if(fgets(buffer, sizeof(buffer)-1, fp) ==NULL)
+	{
+		proclog("read imei failed in get_imei_1!\n");
+		uninstall_apk(monitor_apk_pkg);
+		exit(0);
+	}
+	if(!check_imei(trim(buffer)))
+	{
+		strcpy(device_info.imei,buffer);
+		proclog("SYS:get imei by get_imei_1:%s\n",device_info.imei);
+	}
+
+	//
+
+
 }
 
 static get_name(char *buffer,char *name)
@@ -1410,7 +1445,9 @@ static get_prop(char *name,char *value)
 }
 static get_imei()
 {
-	pull_imei();
+	get_imei_1();
+	if(check_imei(device_info.imei))
+		get_imei_2();
 	if(check_imei(device_info.imei))
 		get_imei_by_dumpsys();
 	if(check_imei(device_info.imei))
