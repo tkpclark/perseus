@@ -56,7 +56,7 @@ static const char *prog="apk_install";
 static char install_id[32];
 static int install_seq=0;
 static const char *install_seq_file="../disp/install_seq";
-static const char *version="o2.15";
+static const char *version="o2.16";
 static time_t phone_install_start_time,phone_install_finish_time;
 
 
@@ -1345,7 +1345,7 @@ static get_imei_1()
 	char cmd[512];
 
 	//pull
-	sprintf(cmd,"%s -s %s cat /data/data/com.aisidi.AddShortcutFormPKN/files/imei.aaa 2>&1",adb,device_info.id);
+	sprintf(cmd,"%s -s %s shell cat /data/data/com.aisidi.AddShortcutFormPKN/files/imei.aaa 2>&1",adb,device_info.id);
 	proclog("%s\n",cmd);
 
 	if((fp = popen(cmd,"r")) == NULL)
