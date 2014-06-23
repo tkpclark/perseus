@@ -75,6 +75,8 @@ typedef struct
 	char tcp_server_ip[32];
 	char tcp_server_port[12];
 	
+	char http_prefix[128];
+
 }SERVER_INFO;
 
 typedef struct
@@ -114,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.05";
+static const char *version="o3.20";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -190,7 +192,7 @@ static int strend(char *str, char *end)
         return !strcmp(p,_end);
         //printf("%s\n",p);
 }
-static int ftp_download(const char *filename,const char *server_dir)
+static int http_download(const char *filename,const char *server_dir)
 {
 	//download
 	
@@ -208,7 +210,7 @@ dl:
 		FILE *fp;
 	//	printf("downloading %s from server\n",filename);
 		
-		sprintf(cmd,"./ftp_download %s %s %s %s %s 2>&1",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password,server_dir,gzfile);
+		sprintf(cmd,"wget %s/%s/%s 2>&1",prog_argu[debug].server_info.http_prefix,server_dir,gzfile);
 		proclog("%s\n",cmd);
 		
 		if((fp = popen(cmd,"r")) == NULL)
@@ -217,14 +219,7 @@ dl:
 			pclose(fp);
 			return -1;
 		}
-		char buffer[128];
-		if(fgets(buffer, sizeof(buffer)-1, fp)!=NULL)
-		{
-			alarm(0);
-			proclog("ERR,FTPSERVER return:%s",buffer);
-			pclose(fp);
-			return -1;
-		}
+
 		pclose(fp);
 	}
 	else if(down_from==2)
@@ -310,7 +305,7 @@ static fetch(char *filename,char *server_dir,char *official_crc)
 download:
 	if(try_count++>3)
 		return -1;
-	if(ftp_download(filename,server_dir)==-1)
+	if(http_download(filename,server_dir)==-1)
 	{
 		goto download;
 	}
@@ -610,6 +605,8 @@ static read_server_config(char *config_name)
 	read_app_config(prog_argu[debug].app_config,"tcp_server_ip",prog_argu[debug].server_info.tcp_server_ip);
 	read_app_config(prog_argu[debug].app_config,"tcp_server_port",prog_argu[debug].server_info.tcp_server_port);
 
+	read_app_config(prog_argu[debug].app_config,"http_prefix",prog_argu[debug].server_info.http_prefix);
+
 	
 	proclog("config: ip:%s usr:%s pwd:%s\n",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password);
 }
@@ -762,18 +759,12 @@ static download_config()
 
 	prt_screen(1, 1,0,"正在获取配置文件...\n");
 
-download_config:
-	if(try_count++>3)
-	{
-		proclog("failed to download %s!\n",filename);
-		prt_screen(2, 0,0,"下载配置文件失败!\n");
-		return -1;
-	}
-	ftp_download(filename,"config/");
+	http_download(filename,"config/");
 
 	if(is_file_exist(_filename)==0)
 	{
-		goto download_config;
+		prt_screen(2, 0,0,"下载配置文件失败!\n");
+		return -1;
 	}
 	return 0;
 
@@ -852,7 +843,7 @@ update()
 	if(check_connection()==0)
 	{
 		down_from=1;
-		proclog("download from ftp...\n");
+		proclog("download from http...\n");
 		prt_screen(1, 0,0, "正在从服务器下载...\n");
 	}
 	else if(sdcard_exists())
@@ -863,7 +854,7 @@ update()
 	}
 	else
 	{
-		proclog("neither ftp nor sdcard is available\n");
+		proclog("neither http nor sdcard is available\n");
 		prt_screen(2, 1,0, "网络和SD卡都不可用，更新失败!\n");
 		return;	
 	}
@@ -1518,7 +1509,7 @@ static int ftp_upload(const char *filename)
 	{
 		prt_screen(3, 0, 1,"上传日志失败!\n");
 		proclog("%s upload failed!\n",filename);
-		proclog("\n\n\n[%s]\n\n\n",buffer);
+		//proclog("\n\n\n[%s]\n\n\n",buffer);
 		return -1;
 	}
 
