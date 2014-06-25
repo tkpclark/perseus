@@ -116,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.20";
+static const char *version="o3.26";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -201,6 +201,7 @@ static int http_download(const char *filename,const char *server_dir)
 	char cmd[256];
 	int try_count=0;
 	char tmp[128];
+	char buffer[1024];
 
 dl:
 	if(++try_count > 3)
@@ -212,15 +213,19 @@ dl:
 		
 		sprintf(cmd,"wget %s/%s/%s 2>&1",prog_argu[debug].server_info.http_prefix,server_dir,gzfile);
 		proclog("%s\n",cmd);
-		
+		system(cmd);
+		/*
 		if((fp = popen(cmd,"r")) == NULL)
 		{
 			proclog("ERR:Fail to execute:%s\n",cmd);
 			pclose(fp);
 			return -1;
 		}
-
+		memset(buffer,0,sizeof(buffer));
+		fread(buffer , sizeof(buffer) , sizeof(char) , fp);
 		pclose(fp);
+		*/
+
 	}
 	else if(down_from==2)
 	{
@@ -236,17 +241,18 @@ dl:
 		return -1;
 	}
 
-	//proclog("%s download successfully!\n",filename);
+	proclog("%s download finished!\n",filename);
 
-	
-
-
-	sprintf(tmp,"../tmp/%s",gzfile);
-	if( !is_file_exist(tmp) )
+	if( !is_file_exist(gzfile) )
 	{
 		proclog("download %s failed ,try again...\n",gzfile);
 		goto dl;
 	}
+	sprintf(cmd,"mv %s ../tmp/",gzfile);
+	proclog("%s\n",cmd);
+	system(cmd);
+
+	//sleep(10);
 	sprintf(cmd,"tar zxvf ../tmp/%s -C ../tmp",gzfile);
 	proclog("%s\n",cmd);
 	system(cmd);
@@ -683,14 +689,17 @@ static get_file_info(const char *config_file,FILE_INFO file_info[])// infomation
 		if(!n)
 			break;
 		T_DES(0,key,des_len,buffer,buffer);
-
+		//proclog("version config:%s\n",buffer);
 		p=strtok(trim(buffer)," ");
 		if(p!=NULL)
 			strcpy(file_info[i].filename,trim(p));
 
 		p=strtok(NULL," ");
 		if(p!=NULL)
+		{
 			strcpy(file_info[i].server_dir,trim(p));
+			//proclog("server_dir:%s\n",file_info[i].server_dir);
+		}
 
 		p=strtok(NULL," ");
 		if(p!=NULL)
@@ -759,7 +768,7 @@ static download_config()
 
 	prt_screen(1, 1,0,"正在获取配置文件...\n");
 
-	http_download(filename,"config/");
+	http_download(filename,"config");
 
 	if(is_file_exist(_filename)==0)
 	{
@@ -975,16 +984,6 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		return -1;
 	}
 
-	/*
-	//get file size
-	int filesize = lseek(fd,0,SEEK_CUR);
-	if(filesize < 0)
-	{
-		proclog("get filesize failed,%s\n",strerror(errno));
-		return -1;
-	}
-	*/
-	//set file postion
 
 	if(lseek(fd,send_pos,SEEK_SET)<0)
 	{
@@ -992,6 +991,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		return -1;
 	}
 	
+
 	//send file line by line
 	int n=0;
 	int read_count=0;
@@ -1015,6 +1015,15 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		}
 		else if(n==0)//finished reading
 		{
+			//make sure whether it's really end of file
+			if(lseek(fd,0,SEEK_CUR)!=get_file_size(fd))
+			{
+				proclog("ERR:fuck! not end!read again!");
+				continue;
+			}
+
+
+
 			if(bat_offs)
 				if(send_real(sockfd, filename, send_pos,posfd)<0)
 					return -1;
@@ -1601,6 +1610,7 @@ main(int argc,char **argv)
 	}
 	
 
+
 	//register quit function
 	if(atexit(&procquit))
 	{
@@ -1641,12 +1651,12 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 
-	if(1)
+	if(argc==2&&strcmp(argv[1],"test"))
 	{
 	//reset mac
-	reset_mac();
+		reset_mac();
 	
-	ntpupdate(2);
+		ntpupdate(2);
 	}
 	//delete old files
 	delete_old_logs();
