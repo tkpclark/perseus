@@ -116,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.26";
+static const char *version="o3.27";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -963,6 +963,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 	char buffer[1024];
 	char cmd[128];
 	int try_count=0;
+	int real_send_bytes=0;
 	
 	char tmp[256];
 
@@ -974,7 +975,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 	strcpy(ext_name,p+1);
 	strcat(ext_name,"\t");
 
-	
+	int filesize=0;
 
 	//open file
 	if(( fd = open(filename,0)) < 0)
@@ -1016,7 +1017,8 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		else if(n==0)//finished reading
 		{
 			//make sure whether it's really end of file
-			if(lseek(fd,0,SEEK_CUR)!=get_file_size(fd))
+			filesize=get_file_size(fd);
+			if(lseek(fd,0,SEEK_CUR)!=filesize)
 			{
 				proclog("ERR:fuck! not end!read again!");
 				continue;
@@ -1028,7 +1030,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 				if(send_real(sockfd, filename, send_pos,posfd)<0)
 					return -1;
 
-			
+			proclog("file:%s:reallysend:[%d]realsize[%d]lastposition[%d]!",filename,real_send_bytes,filesize,send_pos);
 			//sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
 			sprintf(cmd, "cat %s >> %s.tcp  && rm %s",filename,filename,filename);
 			printf("%s\n",cmd);
@@ -1040,6 +1042,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		}
 		else if(n==des_len)//get data
 		{
+			real_send_bytes+=n;
 			//get pos
 			send_pos=lseek(fd,0,SEEK_CUR);
 			
