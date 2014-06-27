@@ -116,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.27";
+static const char *version="o3.28";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -1509,7 +1509,7 @@ static int ftp_upload(const char *filename)
 
 	//proclog("\n\n\n[%s]\n\n\n",buffer);
 
-	if(strstr(buffer,"File receive OK"))
+	if(strstr(buffer,"Ok to send data"))
 	{
 	//	alarm(0);
 		prt_screen(3, 0, 1,"上传日志成功!\n");
