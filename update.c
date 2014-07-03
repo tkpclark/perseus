@@ -116,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.28";
+static const char *version="o3.29";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -211,6 +211,12 @@ dl:
 		FILE *fp;
 	//	printf("downloading %s from server\n",filename);
 		
+		//delete first before wget
+		sprintf(cmd,"rm -f %s",gzfile);
+		proclog("%s\n",cmd);
+		system(cmd);
+
+
 		sprintf(cmd,"wget %s/%s/%s 2>&1",prog_argu[debug].server_info.http_prefix,server_dir,gzfile);
 		proclog("%s\n",cmd);
 		system(cmd);
