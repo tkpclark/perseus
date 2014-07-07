@@ -116,7 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.29";
+static const char *version="o3.30";
 static const char *send_pos_file="send_log.pos";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
@@ -219,7 +219,9 @@ dl:
 
 		sprintf(cmd,"wget %s/%s/%s 2>&1",prog_argu[debug].server_info.http_prefix,server_dir,gzfile);
 		proclog("%s\n",cmd);
+		alarm(60);
 		system(cmd);
+		alarm(0);
 		/*
 		if((fp = popen(cmd,"r")) == NULL)
 		{
@@ -1010,12 +1012,12 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		send_count=0;
 		
 	read_data:
-		if(++read_count >= 3)
+		if(++read_count >= 5)
 				return -1;
 		n=read(fd,buffer,des_len);
 		if(n<0)//error
 		{
-			proclog("ERR:read failed %d times",read_count);
+			proclog("ERR:read failed %d times,%s\n",read_count,strerror(errno));
 			goto read_data;
 			
 			
@@ -1023,11 +1025,12 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		else if(n==0)//finished reading
 		{
 			//make sure whether it's really end of file
+			int cur_location=lseek(fd,0,SEEK_CUR);
 			filesize=get_file_size(fd);
-			if(lseek(fd,0,SEEK_CUR)!=filesize)
+			if(cur_location!=filesize || cur_location!=real_send_bytes)
 			{
-				proclog("ERR:fuck! not end!read again!");
-				continue;
+				proclog("!!!!ERR:fuck! not end!read again!\n");
+				goto read_data;
 			}
 
 
@@ -1036,7 +1039,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 				if(send_real(sockfd, filename, send_pos,posfd)<0)
 					return -1;
 
-			proclog("file:%s:reallysend:[%d]realsize[%d]lastposition[%d]!",filename,real_send_bytes,filesize,send_pos);
+			proclog("file:%s:reallysend:[%d]realsize[%d]lastposition[%d]!\n",filename,real_send_bytes,filesize,send_pos);
 			//sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
 			sprintf(cmd, "cat %s >> %s.tcp  && rm %s",filename,filename,filename);
 			printf("%s\n",cmd);
@@ -1070,7 +1073,7 @@ static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
 		}
 		else
 		{
-			proclog("read return [%d] bytes,%s",n,strerror(errno));
+			proclog("read return [%d] bytes,%s\n",n,strerror(errno));
 			return -1;
 		}
 		
@@ -1486,53 +1489,10 @@ static copy_day_logs()
 	}
 
 }
-//////////////////////////////////////////////
-//ftp upload
-static int ftp_upload(const char *filename)
-{
-	//download
-//	printf("downloading %s from server\n",filename);
-	if(!is_online(prog_argu[debug].server_info.ip,21))
-	{
-		prt_screen(3, 0, 1,"网络中断,上传失败!\n");
-		return -1;
-	}
-	prt_screen(3, 0,1, "正在上传日志...\n");
-	FILE *fp;
-	char cmd[256];
-	sprintf(cmd,"./ftp_upload %s %s %s %s %s 2>&1",prog_argu[debug].server_info.ip,prog_argu[debug].server_info.username,prog_argu[debug].server_info.password,filename,prog_argu[debug].log_dir);
-	proclog("%s\n",cmd);
-	if((fp = popen(cmd,"r")) == NULL)
-	{
-		proclog("ERR:Fail to execute:%s\n",cmd);
-		pclose(fp);
-		return -1;
-	}
-	char buffer[1024];
-	fread(buffer , sizeof(buffer) , sizeof(char) , fp);
 
 
 
-	//proclog("\n\n\n[%s]\n\n\n",buffer);
-
-	if(strstr(buffer,"Ok to send data"))
-	{
-	//	alarm(0);
-		prt_screen(3, 0, 1,"上传日志成功!\n");
-		proclog("%s upload successfully!\n",filename);
-		pclose(fp);
-		return 0;
-	}
-	else
-	{
-		prt_screen(3, 0, 1,"上传日志失败!\n");
-		proclog("%s upload failed!\n",filename);
-		//proclog("\n\n\n[%s]\n\n\n",buffer);
-		return -1;
-	}
-
-}
-static int  need_upload(char *filename)
+static int  file_not_today(char *filename)
 {
 	char name[128];
 	char *p;
@@ -1554,61 +1514,38 @@ static int  need_upload(char *filename)
 	else
 		return 0;
 }
-static int upload_log_ftp()
+
+static pack_old_logs()
 {
-
-	prt_screen(1, 0, 0,"正在准备上传日志(ftp)...\n");
-	char cmd[256];
-	DIR * dp;
-	char upload_file[128];
+	char cmd[512];
 	struct dirent *name;
-	char path[256];
-	char logfilename[128];
-
-	//printf("debug:%d\n",debug);
+	DIR * dp;
 	dp = opendir(prog_argu[debug].log_dir);
-
 	if(!dp)
 	{
 		return -1;
 	}
-	char filename[128];
-	int tarflag=0;//are there any files upload failed
-
 	while(name = readdir(dp))
 	{
-		if(strlen(name->d_name)<3)
-			continue;
-		if(!strend(name->d_name,"sys.orig") && !strend(name->d_name,"record.orig.tcp")&& !strend(name->d_name,"day.record.tcp")&& !strend(name->d_name,"day.sys"))
-			continue;
-		//printf("%s\n",name->d_name);
-		sprintf(upload_file,"%s/%s",prog_argu[debug].log_dir,name->d_name);
-
-		if(need_upload(name->d_name))
+		if(!strend(name->d_name,".tar.gz") && !strend(name->d_name,".pos"))
 		{
-			sleep(5);//sleep before upload,avoid too tight to the last log of apk_install
-			if(!ftp_upload(name->d_name))
+			printf("%s\n",name->d_name);
+			if(file_not_today(name->d_name))
 			{
-				sprintf(cmd,"mv %s %s.ftp",upload_file,upload_file);
+				sprintf(cmd,"tar zcvf %s.tar.gz %s  && rm %s", name->d_name, name->d_name, name->d_name);
 				proclog("%s\n",cmd);
 				system(cmd);
-
 			}
-
-
+			else
+			{
+				printf("file of today, dont pack!\n");
+			}
 		}
 
-
-
 	}
+
 	closedir(dp);
-
 }
-
-
-
-
-
 main(int argc,char **argv)
 {
 	write_version("../disp/vud",version,strlen(version));
@@ -1660,11 +1597,14 @@ main(int argc,char **argv)
 
 	prt_screen(1, 0,0,"正在启动更新程序...\n");
 
-	if(argc==2&&strcmp(argv[1],"test"))
+	if(argc==2&&!strcmp(argv[1],"test"))
 	{
-	//reset mac
+		printf("it's test ,don't reset mac!");
+	}
+	else
+	{
+		//reset mac
 		reset_mac();
-	
 		ntpupdate(2);
 	}
 	//delete old files
@@ -1688,11 +1628,15 @@ main(int argc,char **argv)
 	chdir(prog_argu[debug].log_dir);
 	if(upload_log_tcp()<0)
 		prt_screen(2, 0, 0, "TCP日志上传失败!\n");
+
+
+	pack_old_logs();
+
 	chdir(path);
 
 
 
-	upload_log_ftp();
+
 
 }	
 
