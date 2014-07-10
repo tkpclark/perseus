@@ -116,8 +116,7 @@ extern const char *key;
 int debug=0;
 static int down_from=1;// 1:ftp_server 2:sdcard
 static const char *prog="update";
-static const char *version="o3.30";
-static const char *send_pos_file="send_log.pos";
+static const char *version="o3.31";
 static char bat_buffer[100*1024];
 static int bat_offs=0;
 
@@ -836,7 +835,7 @@ static check_connection()
 {
 	prt_screen(1, 0,0, "正在检查网络状态...     ");
 	proclog("checking network %s...\n",prog_argu[debug].server_info.ip);
-	if(!is_online(prog_argu[debug].server_info.ip,21))
+	if(!is_online(prog_argu[debug].server_info.ip,80))
 	{
 		prt_screen(1, 1,0, "\n");
 		proclog("network is not available!\n");
@@ -929,158 +928,7 @@ if((j=write(sd,buf,num))!=num)
 return 0;
 }
 
-static int send_real(int sockfd,char *filename,int send_pos,int posfd)
-{
-	char buffer[256];
-	*(int*)(bat_buffer)=htonl(bat_offs);
-	alarm(20);
-	if(writeall(sockfd,bat_buffer,bat_offs+sizeof(int))<0)
-	{
-		proclog("ERR:write all failed times, %s\n",strerror(errno));
-		return -1;
-	}
-	//read response
-	recv(sockfd,buffer,4,MSG_WAITALL);
-	alarm(0);
-	int resp=ntohl(*(int*)(buffer));
-	printf("sending %d bytes,pos %d,resp:0x%x\n",bat_offs,send_pos,resp);
 
-	if(resp!=0x4F500000)
-	{
-		proclog("server response failed:%x\n",resp);
-		return -1;
-	}
-
-	
-
-	//write pos file
-	sprintf(buffer,"%s:%d",filename,send_pos);
-	//printf("pos:%s\n",buffer);
-	lseek(posfd,0,SEEK_SET);
-	ftruncate(posfd,0);
-	write(posfd,buffer,strlen(buffer));
-
-	prt_screen(1, 1, 0, ".");
-
-	bat_offs=0;
-	return 0;
-}
-static int send_log_tcp(char *filename, int send_pos, int posfd,int sockfd)
-{
-	int fd=0;
-	char buffer[1024];
-	char cmd[128];
-	int try_count=0;
-	int real_send_bytes=0;
-	
-	char tmp[256];
-
-	printf("===file:%s,pos:%d===\n",filename,send_pos);
-
-	//get extend name
-	char *p=strrchr(filename,'.');
-	char ext_name[12];
-	strcpy(ext_name,p+1);
-	strcat(ext_name,"\t");
-
-	int filesize=0;
-
-	//open file
-	if(( fd = open(filename,0)) < 0)
-	{
-		//printscreen("ERR:Fail to execute:%s\n",cmd);
-		proclog("ERR:Fail to open:%s,%s\n",filename,strerror(errno));
-		return -1;
-	}
-
-
-	if(lseek(fd,send_pos,SEEK_SET)<0)
-	{
-		proclog("ERR:Fail to fseek of file %s,pos %d,%s\n",filename,send_pos,strerror(errno));
-		return -1;
-	}
-	
-
-	//send file line by line
-	int n=0;
-	int read_count=0;
-	int send_count=0;
-	int send_len=0;
-	while(1)
-	{
-		read_count=0;
-		send_count=0;
-		
-	read_data:
-		if(++read_count >= 5)
-				return -1;
-		n=read(fd,buffer,des_len);
-		if(n<0)//error
-		{
-			proclog("ERR:read failed %d times,%s\n",read_count,strerror(errno));
-			goto read_data;
-			
-			
-		}
-		else if(n==0)//finished reading
-		{
-			//make sure whether it's really end of file
-			int cur_location=lseek(fd,0,SEEK_CUR);
-			filesize=get_file_size(fd);
-			if(cur_location!=filesize || cur_location!=real_send_bytes)
-			{
-				proclog("!!!!ERR:fuck! not end!read again!\n");
-				goto read_data;
-			}
-
-
-
-			if(bat_offs)
-				if(send_real(sockfd, filename, send_pos,posfd)<0)
-					return -1;
-
-			proclog("file:%s:reallysend:[%d]realsize[%d]lastposition[%d]!\n",filename,real_send_bytes,filesize,send_pos);
-			//sprintf(cmd, "mv %s %s",filename,prog_argu[debug].logbak_dir);
-			sprintf(cmd, "cat %s >> %s.tcp  && rm %s",filename,filename,filename);
-			printf("%s\n",cmd);
-			system(cmd);
-			ftruncate(posfd,0);
-			printf("finished sending %s\n",filename);
-			break;
-	
-		}
-		else if(n==des_len)//get data
-		{
-			real_send_bytes+=n;
-			//get pos
-			send_pos=lseek(fd,0,SEEK_CUR);
-			
-			//decrypt
-			T_DES(0,key,des_len,buffer,tmp);
-
-			strcpy(buffer,ext_name);
-			strcat(buffer,tmp);
-
-			
-			memcpy(bat_buffer+sizeof(int)+bat_offs,buffer,strlen(buffer));
-			bat_offs+=strlen(buffer);
-			if(bat_offs > sizeof(bat_buffer)-1024)
-				if(send_real(sockfd, filename, send_pos,posfd)<0)
-					return -1;
-		
-
-			
-		}
-		else
-		{
-			proclog("read return [%d] bytes,%s\n",n,strerror(errno));
-			return -1;
-		}
-		
-	}
-	close(fd);
-	return 0;
-}
 static int connect_to_server()
 {
 
@@ -1174,7 +1022,248 @@ static int server_login(int sockfd)
 	}
 
 }
-static upload_log_tcp()
+
+static int  file_not_today(char *filename)
+{
+	char name[128];
+	char *p;
+	strcpy(name,filename);
+	p=strrchr(name,'_');
+	if(p==NULL)
+		return 0;
+
+	*p=0;
+
+	char ts[32];
+	time_t tt;
+	tt=time(0);
+	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
+
+
+	if(strcmp(ts,name) >0)
+		return 1;
+	else
+		return 0;
+}
+
+static get_tcp_send_pos(char *filename)
+{
+
+	int fd;
+	int n;
+	char buf[128];
+	char pos_file[128];
+	memset(pos_file,0,sizeof(pos_file));
+	strcat(pos_file,filename);
+	strcat(pos_file,".pos");
+
+	fd=open(pos_file, 0);
+	if(fd <0)
+	{
+		//proclog("open %s failed!%s\n",pos_file,strerror(errno));
+		return 0;
+	}
+
+	//get postion
+	memset(buf,0,sizeof(buf));
+	n=read(fd,buf,sizeof(buf));
+	if(n>0 && isdigit(buf[0]))//file is just created
+	{
+		return atoi(buf);
+	}
+	else
+	{
+		return 0;
+	}
+}
+static write_tcp_send_pos(char *filename, int send_pos)
+{
+	int fd;
+	int n;
+	char pos_file[128];
+	memset(pos_file,0,sizeof(pos_file));
+	strcat(pos_file,filename);
+	strcat(pos_file,".pos");
+
+	fd=open(pos_file, O_CREAT|O_TRUNC|O_WRONLY, 0600);
+	if(fd<0)
+	{
+		proclog("write %s failed!%s",pos_file, strerror(errno));
+		return -1;
+	}
+
+	char buffer[256];
+	memset(buffer,0,sizeof(buffer));
+	sprintf(buffer,"%d",send_pos);
+	printf("writing position:%d\n",send_pos);
+	n=write(fd,buffer,strlen(buffer));
+	printf("wrote %d bytes\n",n);
+	close(fd);
+}
+static int send_real(int sockfd,char *filename,int send_pos)
+{
+	char buffer[256];
+	*(int*)(bat_buffer)=htonl(bat_offs);
+	alarm(20);
+	/*
+	if(writeall(sockfd,bat_buffer,bat_offs+sizeof(int))<0)
+	{
+		proclog("ERR:write all failed times, %s\n",strerror(errno));
+		return -1;
+	}
+	//read response
+	recv(sockfd,buffer,4,MSG_WAITALL);
+	alarm(0);
+	int resp=ntohl(*(int*)(buffer));
+	printf("sending %d bytes,pos %d,resp:0x%x\n",bat_offs,send_pos,resp);
+
+	if(resp!=0x4F500000)
+	{
+		proclog("server response failed:%x\n",resp);
+		return -1;
+	}
+	*/
+
+
+	//write pos file
+
+	write_tcp_send_pos(filename,send_pos);
+
+	prt_screen(1, 1, 0, ".");
+
+	bat_offs=0;
+	return 0;
+}
+
+static int send_one_file_by_tcp(char *filename, int sockfd)
+{
+	int fd=0;
+	char buffer[1024];
+	char cmd[128];
+	int try_count=0;
+	int send_pos=0;
+	int filesize=0;
+
+	char tmp[256];
+	send_pos =  get_tcp_send_pos(filename);
+	printf("===sending file:%s, start pos:%d===\n",filename,send_pos);
+
+	//get extend name
+	char *p=strrchr(filename,'.');
+	char ext_name[12];
+	strcpy(ext_name,p+1);
+	strcat(ext_name,"\t");
+
+
+
+	//open file
+	if(( fd = open(filename,0)) < 0)
+	{
+		//printscreen("ERR:Fail to execute:%s\n",cmd);
+		proclog("ERR:Fail to open:%s,%s\n",filename,strerror(errno));
+		return -1;
+	}
+
+	printf("filesize:%d\n",get_file_size(fd));
+	//lseek
+	if(lseek(fd,send_pos,SEEK_SET)<0)
+	{
+		proclog("ERR:Fail to fseek of file %s,pos %d,%s\n",filename,send_pos,strerror(errno));
+		return -1;
+	}
+
+
+	//send file line by line
+	int n=0;
+	int read_count=0;
+	int send_count=0;
+	int send_len=0;
+	while(1)
+	{
+		read_count=0;
+		send_count=0;
+
+	read_data:
+		if(++read_count >= 5)
+				return -1;
+		n=read(fd,buffer,des_len);
+		if(n<0)//error
+		{
+			proclog("ERR:read failed %d times,%s\n",read_count,strerror(errno));
+			goto read_data;
+
+
+		}
+		else if(n==0)//finished reading
+		{
+			//make sure whether it's really end of file
+			int cur_location=lseek(fd,0,SEEK_CUR);
+			filesize=get_file_size(fd);
+			if(cur_location!=filesize )
+			{
+				proclog("ERR:realsize[%d]cur_location[%d]!\n",filename,filesize,cur_location);
+				proclog("!!!!ERR:fuck001! not end!read again!\n");
+				goto read_data;
+			}
+
+
+
+			if(bat_offs)
+				if(send_real(sockfd, filename, send_pos)<0)
+					return -1;
+
+			proclog("finish:file[%s]realsize[%d]lastposition[%d]!\n",filename,filesize,send_pos);
+
+
+			//move to logback
+			if(file_not_today(filename))
+			{
+				sprintf(cmd, "mv %s* %s",filename,prog_argu[debug].logbak_dir);
+				proclog("%s\n",cmd);
+				system(cmd);
+			}
+			else
+			{
+				proclog("it's file of today, do nothing\n");
+			}
+
+
+			break;
+
+		}
+		else if(n==des_len)//get data
+		{
+			//get pos
+			send_pos=lseek(fd,0,SEEK_CUR);
+
+			//decrypt
+			T_DES(0,key,des_len,buffer,tmp);
+
+			strcpy(buffer,ext_name);
+			strcat(buffer,tmp);
+
+
+			memcpy(bat_buffer+sizeof(int)+bat_offs,buffer,strlen(buffer));
+			bat_offs+=strlen(buffer);
+			if(bat_offs > sizeof(bat_buffer)-1024)
+				if(send_real(sockfd, filename, send_pos)<0)
+					return -1;
+
+
+
+		}
+		else
+		{
+			proclog("read return [%d] bytes,%s\n",n,strerror(errno));
+			return -1;
+		}
+
+	}
+	close(fd);
+	return 0;
+}
+
+static send_all_files_by_tcp()
 {
 
 	prt_screen(1, 0, 0,"正在准备上传日志(tcp)...\n"); 
@@ -1213,37 +1302,21 @@ static upload_log_tcp()
 
 	//connect to server
 	prt_screen(1, 1,0,"正在连接服务器...");
+	/*
 	sockfd = connect_to_server();
 	if(sockfd<0)
 		return;
 
+
 	//create session
 	if(server_login(sockfd)<0)
 		return;
+	*/
 	prt_screen(1, 1,0,"	成功!\n");
 	//open pos file 
 	
 	prt_screen(1, 1,0,"开始上传日志 ");
-	int posfd;
-	int n;
-	posfd=open(send_pos_file, O_CREAT|O_RDWR,0600); 
-	if(posfd <0)
-	{
-		proclog("open %s failed!%s\n",send_pos_file,strerror(errno));
-		return;
-	}
 
-	//get postion
-	n=read(posfd,buf,sizeof(buf));
-	if(n&&strstr(buf,":"))//file is just created
-	{
-		strcpy(logfilename,(char *)strtok(buf,":"));
-		send_pos=atoi(strtok(NULL,":"));
-		//printf("start from %s:%d\n",logfilename,send_pos);
-		if(send_log_tcp(logfilename,send_pos,posfd,sockfd)<0)
-			return -1;
-		upload_file_num++;
-	}
 	//	
 	dp = opendir(prog_argu[debug].log_dir);
 	if(!dp)
@@ -1253,16 +1326,16 @@ static upload_log_tcp()
 	while(name = readdir(dp))
 	{
 
-		if(!strend(name->d_name,"record.orig") && !strend(name->d_name,"day.record"))
-			continue;
-		if(send_log_tcp(name->d_name,0,posfd,sockfd)<0)
-			return -1;
-		upload_file_num++;
+		if(strend(name->d_name,"record.orig"))
+		{
+			if(send_one_file_by_tcp(name->d_name,sockfd)<0)
+				return -1;
+			upload_file_num++;
+		}
 		
 	}
 	
 	closedir(dp);
-	close(posfd);
 	shutdown(sockfd,2);
 	close(sockfd);
 
@@ -1492,28 +1565,7 @@ static copy_day_logs()
 
 
 
-static int  file_not_today(char *filename)
-{
-	char name[128];
-	char *p;
-	strcpy(name,filename);
-	p=strrchr(name,'_');
-	if(p==NULL)
-		return 0;
 
-	*p=0;
-
-	char ts[32];
-	time_t tt;
-	tt=time(0);
-	strftime(ts,30,"%Y%m%d",(const struct tm *)localtime(&tt));
-
-
-	if(strcmp(ts,name) >0)
-		return 1;
-	else
-		return 0;
-}
 
 static pack_old_logs()
 {
@@ -1545,6 +1597,34 @@ static pack_old_logs()
 	}
 
 	closedir(dp);
+}
+static mv_sys_log()
+{
+	char cmd[256];
+	DIR * dp;
+	struct dirent *name;
+	dp = opendir(prog_argu[debug].log_dir);
+	if(!dp)
+	{
+		return -1;
+	}
+	while(name = readdir(dp))
+	{
+
+		if(strend(name->d_name,"sys.orig"))
+		{
+			if(file_not_today(name->d_name))
+			{
+				sprintf(cmd,"mv %s %s",name->d_name,prog_argu[debug].logbak_dir);
+				proclog("%s\n",cmd);
+				system(cmd);
+			}
+		}
+
+	}
+
+	closedir(dp);
+
 }
 main(int argc,char **argv)
 {
@@ -1626,13 +1706,15 @@ main(int argc,char **argv)
 	char path[256];
 	getcwd(path,sizeof(path));
 	chdir(prog_argu[debug].log_dir);
-	if(upload_log_tcp()<0)
+	if(send_all_files_by_tcp()<0)
 		prt_screen(2, 0, 0, "TCP日志上传失败!\n");
 
 
-	pack_old_logs();
-
+	//pack_old_logs();
+	mv_sys_log();
 	chdir(path);
+
+
 
 
 
